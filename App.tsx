@@ -1,0 +1,189 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Tour, Photo, AppSettings, Language, View, TourNameAndStatus, ProcessedTourData } from './types';
+import { mockApiService } from './services/mockApiService';
+import { geminiService } from './services/geminiService';
+import { DEFAULT_SETTINGS } from './constants';
+import { Header } from './components/Header';
+import { TourSelector } from './components/TourSelector';
+import { EditorView } from './components/EditorView';
+import { SettingsView } from './components/SettingsView';
+import { LoadingSpinner } from './components/LoadingSpinner';
+
+const App: React.FC = () => {
+  const [view, setView] = useState<View>('editor');
+  const [tours, setTours] = useState<TourNameAndStatus[]>([]);
+  const [selectedTourName, setSelectedTourName] = useState<string | null>(null);
+  const [sourceTour, setSourceTour] = useState<Tour | null>(null);
+  const [sourcePhotos, setSourcePhotos] = useState<Photo[]>([]);
+  const [processedData, setProcessedData] = useState<ProcessedTourData | null>(null);
+  const [canonicalEnData, setCanonicalEnData] = useState<ProcessedTourData | null>(null);
+  const [acceptedLocalizedData, setAcceptedLocalizedData] = useState<ProcessedTourData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  const fetchTourList = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const tourList = await mockApiService.getTours();
+      setTours(tourList);
+      if (!selectedTourName && tourList.length > 0) {
+        setSelectedTourName(tourList[0].name);
+      }
+    } catch (err) {
+      setError('Nie udało się załadować listy wycieczek.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedTourName]);
+
+
+  useEffect(() => {
+    fetchTourList();
+  }, [fetchTourList]);
+
+  useEffect(() => {
+    if (selectedTourName) {
+      const fetchTourDetails = async () => {
+        setIsLoading(true);
+        setError(null);
+        setProcessedData(null); 
+        setCanonicalEnData(null);
+        setAcceptedLocalizedData(null);
+        try {
+          const { tour, photos } = await mockApiService.getTourDetails(selectedTourName);
+          setSourceTour(tour);
+          setSourcePhotos(photos);
+        } catch (err) {
+          setError('Nie udało się załadować szczegółów wycieczki.');
+          console.error(err);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchTourDetails();
+    }
+  }, [selectedTourName]);
+
+  const handleLoadCanonicalEn = useCallback(async () => {
+    if (!selectedTourName) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await mockApiService.getCanonicalEnData(selectedTourName);
+      setCanonicalEnData(data);
+    } catch(err) {
+      setError(`Nie udało się załadować kanonicznej treści EN: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedTourName]);
+
+  const handleLoadLocalizedData = useCallback(async (lang: Language) => {
+    if (!selectedTourName) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+        const data = await mockApiService.getLocalizedData(selectedTourName, lang);
+        setAcceptedLocalizedData(data);
+    } catch(err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(`Nie udało się załadować zaakceptowanej treści dla ${lang}: ${errorMessage}`);
+        console.error(err);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [selectedTourName]);
+
+
+  const handleGenerate = useCallback(async (mode: Language | 'EN', feedback: string, renameInDrive: boolean) => {
+    if (!sourceTour) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      let result;
+      if (mode === 'EN') {
+        result = await geminiService.normalizeAndAnalyze(sourceTour, sourcePhotos, settings, feedback);
+      } else {
+        if (!canonicalEnData) {
+          throw new Error("Cannot localize because canonical English data is not available. Please switch to the EN tab, generate, and accept the content first.");
+        }
+        result = await geminiService.localizeAndAnalyze(sourceTour, canonicalEnData.description, sourcePhotos, mode, feedback, settings);
+      }
+      setProcessedData(result);
+      console.log('Generated Data:', result);
+    } catch (err) {
+      setError(`Wystąpił błąd podczas generowania treści: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sourceTour, sourcePhotos, settings, canonicalEnData]);
+
+  const handleAccept = useCallback(async (mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean) => {
+    if (!sourceTour) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await mockApiService.acceptChanges(sourceTour.name, mode, data, renameInDrive);
+      if (mode === 'EN') {
+        setCanonicalEnData(data);
+      } else {
+        setAcceptedLocalizedData(data);
+      }
+      alert(`Zmiany dla wycieczki "${sourceTour.name}" w języku ${mode} zostały zaakceptowane i zapisane.`);
+      // Refetch tour list to get updated statuses
+      await fetchTourList();
+
+    } catch (err) {
+      setError(`Nie udało się zapisać zmian: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sourceTour, fetchTourList]);
+
+  const selectedTour = tours.find(t => t.name === selectedTourName) || null;
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
+      <Header currentView={view} setView={setView} />
+      <main className="p-4 sm:p-6 lg:p-8">
+        {view === 'editor' && (
+          <>
+            <TourSelector
+              tours={tours}
+              selectedTourName={selectedTourName}
+              onSelectTour={setSelectedTourName}
+              disabled={isLoading}
+            />
+            {error && <div className="mt-4 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-200 rounded-md">{error}</div>}
+            {isLoading && !sourceTour && <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>}
+            {sourceTour && selectedTour && (
+              <EditorView
+                sourceTour={sourceTour}
+                selectedTour={selectedTour}
+                sourcePhotos={sourcePhotos}
+                processedData={processedData}
+                setProcessedData={setProcessedData}
+                canonicalEnData={canonicalEnData}
+                acceptedLocalizedData={acceptedLocalizedData}
+                setAcceptedLocalizedData={setAcceptedLocalizedData}
+                onGenerate={handleGenerate}
+                onAccept={handleAccept}
+                onLoadCanonicalEn={handleLoadCanonicalEn}
+                onLoadLocalizedData={handleLoadLocalizedData}
+                isLoading={isLoading}
+                settings={settings}
+              />
+            )}
+          </>
+        )}
+        {view === 'settings' && <SettingsView settings={settings} setSettings={setSettings} />}
+      </main>
+    </div>
+  );
+};
+
+export default App;

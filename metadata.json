@@ -1,0 +1,5 @@
+{
+  "name": "Walkative Tours Description Fixer",
+  "description": "An application to normalize, localize, and standardize tour descriptions and photo metadata using AI. It streamlines content creation for EN, PL, DE, and ES, ensuring brand consistency and quality.",
+  "requestFramePermissions": []
+}
