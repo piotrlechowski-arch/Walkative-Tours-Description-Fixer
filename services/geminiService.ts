@@ -1,7 +1,27 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { Tour, Photo, AppSettings, ProcessedTourData, Language, TourDescription } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+/**
+ * Wysyła zapytanie do naszego bezpiecznego backendu (server.js),
+ * który następnie przekaże je do API Gemini.
+ */
+async function callApi(body: object): Promise<any> {
+  const response = await fetch('/api/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || 'Błąd komunikacji z serwerem');
+  }
+  
+  // Backend zwraca pełną odpowiedź od Gemini, więc ją parsujemy
+  return response.json();
+}
+
 
 /**
  * A post-processing step to fix validation issues automatically.
@@ -9,13 +29,12 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
  * Uses a fast model for efficiency.
  */
 async function runQuickFix(text: string, qcSystemPrompt: string): Promise<string> {
-  const textModel = 'gemini-2.5-flash';
-  const result = await ai.models.generateContent({
-      model: textModel,
+  const response = await callApi({
+      model: 'gemini-2.5-flash',
       contents: text,
       config: { systemInstruction: qcSystemPrompt }
   });
-  return result.text;
+  return response.text;
 }
 
 function parseDescriptionResponse(text: string): TourDescription {
@@ -35,22 +54,13 @@ function parseDescriptionResponse(text: string): TourDescription {
  * It cleans markdown, finds the array content, and parses it.
  */
 function parsePhotoMetadataResponse(text: string): any[] {
-  // 1. Clean up markdown and trim whitespace
   let cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
-
-  // 2. Find the start and end of the array
   const startIndex = cleanedText.indexOf('[');
   const endIndex = cleanedText.lastIndexOf(']');
-
-  // If no array found, throw a clear error
   if (startIndex === -1 || endIndex === -1) {
     throw new Error(`Could not find a JSON array in the response. Response text: "${cleanedText}"`);
   }
-
-  // 3. Extract the JSON array string
   const jsonString = cleanedText.substring(startIndex, endIndex + 1);
-
-  // 4. Parse the extracted string
   try {
     return JSON.parse(jsonString);
   } catch (error) {
@@ -62,36 +72,21 @@ function parsePhotoMetadataResponse(text: string): any[] {
 const urlToGenerativePart = async (url: string) => {
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const blob = await response.blob();
         const base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                 if (typeof reader.result !== 'string') {
-                    return reject(new Error("Failed to read blob as string."));
-                 }
+                 if (typeof reader.result !== 'string') return reject(new Error("Failed to read blob as string."));
                  resolve(reader.result.split(',')[1]);
             };
             reader.onerror = reject;
             reader.readAsDataURL(blob);
         });
-        return {
-            inlineData: {
-                data: base64Data,
-                mimeType: blob.type || 'image/jpeg',
-            },
-        };
+        return { inlineData: { data: base64Data, mimeType: blob.type || 'image/jpeg' } };
     } catch (e) {
         console.error(`Could not fetch image from ${url}. Error:`, e);
-        // Return a placeholder part if fetch fails
-        return {
-            inlineData: {
-                data: '',
-                mimeType: 'image/jpeg',
-            },
-        };
+        return { inlineData: { data: '', mimeType: 'image/jpeg' } };
     }
 };
 
@@ -102,8 +97,6 @@ export const geminiService = {
     settings: AppSettings,
     feedback: string
   ): Promise<ProcessedTourData> => {
-    // 1. Normalize Description
-    const textModel = settings.models.text;
     const feedbackTag = feedback ? `<feedback>${feedback}</feedback>\n` : '';
     const descriptionUserInput = `
       ${feedbackTag}<city>${tour.city}</city>
@@ -116,23 +109,16 @@ Description: ${tour.highlightsDescription}
 </highlights>
     `;
     
-    const descriptionResult = await ai.models.generateContent({
-        model: textModel,
+    const descriptionResult = await callApi({
+        model: settings.models.text,
         contents: descriptionUserInput,
-        config: {
-            systemInstruction: settings.prompts.normalizeEN,
-        }
+        config: { systemInstruction: settings.prompts.normalizeEN }
     });
 
-    // 2. Run QC step to fix potential validation issues
-    const initialDescriptionText = descriptionResult.text;
-    const fixedDescriptionText = await runQuickFix(initialDescriptionText, settings.prompts.qcEN);
+    const fixedDescriptionText = await runQuickFix(descriptionResult.text, settings.prompts.qcEN);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    // 3. Analyze Photos using the newly normalized description as context
-    const imageModel = settings.models.image;
     const photoParts = await Promise.all(photos.map(p => urlToGenerativePart(p.url)));
-    
     const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
@@ -144,12 +130,10 @@ Description: ${tour.highlightsDescription}
     
     const allParts = [{ text: photoPromptText }, ...photoParts];
 
-    const photoResult = await ai.models.generateContent({
-        model: imageModel,
+    const photoResult = await callApi({
+        model: settings.models.image,
         contents: { parts: allParts },
-        config: {
-            systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', 'EN'),
-        }
+        config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', 'EN') }
     });
     
     const photoMetadata = parsePhotoMetadataResponse(photoResult.text);
@@ -164,11 +148,7 @@ Description: ${tour.highlightsDescription}
     feedback: string,
     settings: AppSettings
   ): Promise<ProcessedTourData> => {
-    // 1. Localize Description
-    const textModel = settings.models.text;
-    const promptKey = `localize${lang}` as keyof typeof settings.prompts;
-    const systemInstruction = settings.prompts[promptKey];
-    
+    const systemInstruction = settings.prompts[`localize${lang}` as keyof typeof settings.prompts];
     const localizationUserInput = `
 <feedback>${feedback || 'Brak'}</feedback>
 <city>${tour.city}</city>
@@ -178,23 +158,17 @@ Description: ${tour.highlightsDescription}
 <highlights>${enTour.highlights}</highlights>
     `;
 
-    const descriptionResult = await ai.models.generateContent({
-        model: textModel,
+    const descriptionResult = await callApi({
+        model: settings.models.text,
         contents: localizationUserInput,
         config: { systemInstruction }
     });
     
-    // 2. Run QC step for the specific language
-    const initialDescriptionText = descriptionResult.text;
-    const qcPromptKey = `qc${lang}` as keyof AppSettings['prompts'];
-    const qcSystemPrompt = settings.prompts[qcPromptKey];
-    const fixedDescriptionText = await runQuickFix(initialDescriptionText, qcSystemPrompt);
+    const qcSystemPrompt = settings.prompts[`qc${lang}` as keyof AppSettings['prompts']];
+    const fixedDescriptionText = await runQuickFix(descriptionResult.text, qcSystemPrompt);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    // 3. Analyze Photos for the target language
-    const imageModel = settings.models.image;
     const photoParts = await Promise.all(photos.map(p => urlToGenerativePart(p.url)));
-    
     const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
@@ -206,55 +180,38 @@ Description: ${tour.highlightsDescription}
     
     const allParts = [{ text: photoPromptText }, ...photoParts];
 
-    const photoResult = await ai.models.generateContent({
-        model: imageModel,
+    const photoResult = await callApi({
+        model: settings.models.image,
         contents: { parts: allParts },
-        config: {
-            systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', lang),
-        }
+        config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', lang) }
     });
 
     const photoMetadata = parsePhotoMetadataResponse(photoResult.text);
-
     return { description, photos: photoMetadata };
   },
-
-  // FIX: Added missing 'analyzeUploadedPhoto' method, which is called by the PhotoAnalyzerView component.
+  
   analyzeUploadedPhoto: async (
     base64Data: string,
     mimeType: string,
     prompt: string,
     settings: AppSettings
   ): Promise<string> => {
-    const imageModel = settings.models.image;
+    const imagePart = { inlineData: { data: base64Data, mimeType: mimeType } };
+    const textPart = { text: prompt };
     
-    const imagePart = {
-      inlineData: {
-        data: base64Data,
-        mimeType: mimeType,
-      },
-    };
-    
-    const textPart = {
-      text: prompt,
-    };
-
-    const response = await ai.models.generateContent({
-      model: imageModel,
+    const response = await callApi({
+      model: settings.models.image,
       contents: { parts: [imagePart, textPart] },
     });
-
     return response.text;
   },
   
   quickEditText: async (text: string, instruction: string): Promise<string> => {
-    const textModel = 'gemini-2.5-flash';
-
     const systemInstruction = `You are a writing assistant. Modify the given text based on the user's instruction. Respond only with the modified text, without any preamble, explanation, or markdown formatting.
 Instruction: ${instruction}.`;
     
-    const response = await ai.models.generateContent({
-        model: textModel,
+    const response = await callApi({
+        model: 'gemini-2.5-flash',
         contents: text,
         config: { systemInstruction }
     });
