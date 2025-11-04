@@ -26,7 +26,7 @@ RUN npm ci --omit=dev
 
 # Copy backend source and built frontend from the builder stage
 COPY server.js googleApiService.js ./
-COPY dist ./dist
+COPY --from=build /app/dist ./dist
 
 # Expose default port (Cloud Run respects PORT env variable)
 EXPOSE 8080
