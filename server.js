@@ -9,6 +9,16 @@ import { getTours, getTourDetails, getCanonicalEnData, getLocalizedData, acceptC
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+// Log unexpected rejections/exceptions so Railway/Cloud Run logs show the root cause.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
