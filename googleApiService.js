@@ -28,27 +28,122 @@ const getDriveClient = () => {
 };
 
 // --- HELPERS ---
+const toTrimmedString = (value) => {
+    if (value === undefined || value === null) return '';
+    return String(value).trim();
+};
+
+const normalizeKey = (key) => {
+    if (!key) return '';
+    return key.trim().toLowerCase().replace(/[\s_-]+/g, '');
+};
+
+const getValueForKeys = (obj, candidateKeys) => {
+    if (!obj) return '';
+    const normalizedEntries = Object.entries(obj).map(([key, value]) => [normalizeKey(key), value]);
+    for (const candidate of candidateKeys) {
+        const target = normalizeKey(candidate);
+        const match = normalizedEntries.find(([normalizedKey]) => normalizedKey === target);
+        if (match) {
+            return toTrimmedString(match[1]);
+        }
+    }
+    return '';
+};
+
 const sheetDataToObject = (header, row) => {
     const obj = {};
-    header.forEach((key, i) => {
-        // FIX: Trim the header key to remove any leading/trailing whitespace
-        if (key) {
-            obj[key.trim()] = row[i] || '';
-        }
+    header.forEach((rawKey, i) => {
+        if (!rawKey) return;
+        const key = rawKey.trim();
+        if (!key) return;
+        obj[key] = toTrimmedString(row[i]);
     });
     return obj;
+};
+
+const parseTourRow = (header, row) => {
+    const base = {
+        city: '',
+        name: '',
+        short: '',
+        long: '',
+        highlightsTitle: '',
+        highlightsDescription: '',
+        photoIds: [],
+    };
+    const extras = {};
+
+    header.forEach((rawKey, index) => {
+        if (!rawKey) return;
+        const key = rawKey.trim();
+        if (!key) return;
+
+        const normalized = normalizeKey(key);
+        const cellValue = toTrimmedString(row[index]);
+
+        if (!cellValue && !normalized.startsWith('photoid')) {
+            return;
+        }
+
+        if (normalized.startsWith('photoid')) {
+            if (cellValue) base.photoIds.push(cellValue);
+            return;
+        }
+
+        switch (normalized) {
+            case 'city':
+                base.city = cellValue;
+                break;
+            case 'name':
+            case 'tourname':
+                base.name = cellValue;
+                break;
+            case 'short':
+                base.short = cellValue;
+                break;
+            case 'long':
+                base.long = cellValue;
+                break;
+            case 'highlightstitle':
+                base.highlightsTitle = cellValue;
+                break;
+            case 'highlightsdescription':
+                base.highlightsDescription = cellValue;
+                break;
+            case 'photoids':
+                base.photoIds = cellValue.split(',').map(toTrimmedString).filter(Boolean);
+                break;
+            default:
+                extras[key] = cellValue;
+        }
+    });
+
+    if (base.photoIds.length > 0) {
+        base.photoIds = Array.from(new Set(base.photoIds));
+    }
+
+    return { ...extras, ...base };
+};
+
+const fetchToursSource = async (sheets) => {
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Tours_Source!A:AZ',
+    });
+    const values = res.data.values || [];
+    if (values.length === 0) return [];
+    const [header, ...rows] = values;
+    return rows
+        .map(row => parseTourRow(header, row))
+        .filter(tour => Boolean(tour.name));
 };
 
 // --- CORE FUNCTIONS ---
 
 export async function getTours() {
     const sheets = getSheetsClient();
-    const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: 'Tours_Source!A:H', // Assuming columns A-H are used
-    });
-    const [header, ...rows] = res.data.values;
-    const toursSource = rows.map(row => sheetDataToObject(header, row));
+    const toursSource = await fetchToursSource(sheets);
 
     // Fetch statuses from all destination sheets
     const langSheetNames = ['Tours_EN', 'Tours_PL', 'Tours_DE', 'Tours_ES'];
@@ -56,8 +151,12 @@ export async function getTours() {
     for (const sheet of langSheetNames) {
         try {
             const statusRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${sheet}!A:A` });
-            // FIX: Trim tour names from status sheets to ensure accurate matching
-            const tourNames = statusRes.data.values ? statusRes.data.values.flat().map(name => name ? name.trim() : name) : [];
+            const tourNames = statusRes.data.values
+                ? statusRes.data.values
+                    .flat()
+                    .map(toTrimmedString)
+                    .filter(Boolean)
+                : [];
             statusData[sheet] = new Set(tourNames);
         } catch(e) {
             console.warn(`Could not read sheet ${sheet}, assuming no tours are completed.`);
@@ -82,19 +181,26 @@ export async function getTours() {
 
 export async function getTourDetails(name) {
     const sheets = getSheetsClient();
-    // Get tour data
-    const toursRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Tours_Source!A:G' });
-    const [toursHeader, ...toursRows] = toursRes.data.values;
-    const tourData = toursRows.map(row => sheetDataToObject(toursHeader, row)).find(t => t.name === name);
+    const toursSource = await fetchToursSource(sheets);
+    const tourData = toursSource.find(t => t.name === name);
 
     if (!tourData) throw new Error('Tour not found');
-    const tour = { ...tourData, photoIds: tourData.photoIds.split(',').map(s => s.trim()) };
+    const tour = {
+        ...tourData,
+        photoIds: Array.isArray(tourData.photoIds)
+            ? tourData.photoIds
+            : toTrimmedString(tourData.photoIds).split(',').map(toTrimmedString).filter(Boolean),
+    };
 
     // Get photo data
-    const photosRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Photos_Source!A:F' });
-    const [photosHeader, ...photosRows] = photosRes.data.values;
+    const photosRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Photos_Source!A:AZ' });
+    const photoValues = photosRes.data.values || [];
+    const [photosHeader = [], ...photosRows] = photoValues;
     const allPhotos = photosRows.map(row => sheetDataToObject(photosHeader, row));
-    const photos = allPhotos.filter(p => tour.photoIds.includes(p.id)).map(p => ({...p, metadata: {}}));
+    const photoIdSet = new Set(tour.photoIds);
+    const photos = allPhotos
+        .filter(p => photoIdSet.has(p.id))
+        .map(p => ({ ...p, metadata: {} }));
 
     return { tour, photos };
 }
@@ -105,20 +211,40 @@ async function getAcceptedData(tourName, lang) {
     
     // Get description data
     const descRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${sheetName}!A:D` });
-    const [descHeader, ...descRows] = descRes.data.values;
-    const tourDescData = descRows.map(row => sheetDataToObject(descHeader, row)).find(t => t.tourName === tourName);
+    const descValues = descRes.data.values || [];
+    const [descHeader = [], ...descRows] = descValues;
+    const tourDescData = descRows
+        .map(row => sheetDataToObject(descHeader, row))
+        .find(row => getValueForKeys(row, ['tourName', 'name']) === toTrimmedString(tourName));
     if (!tourDescData) throw new Error(`Accepted data not found for tour "${tourName}" in sheet "${sheetName}"`);
-    const description = { short: tourDescData.short, long: tourDescData.long, highlights: tourDescData.highlights };
+    const description = {
+        short: getValueForKeys(tourDescData, ['short']),
+        long: getValueForKeys(tourDescData, ['long']),
+        highlights: getValueForKeys(tourDescData, ['highlights', 'highlightsDescription']),
+    };
 
     // Get photo metadata
     const photoMetaRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Photos_Metadata!A:F' });
-    const [photoHeader, ...photoRows] = photoMetaRes.data.values;
+    const photoValues = photoMetaRes.data.values || [];
+    const [photoHeader = [], ...photoRows] = photoValues;
     const { photos: sourcePhotos } = await getTourDetails(tourName);
     const sourcePhotoIds = new Set(sourcePhotos.map(p => p.id));
 
     const photos = photoRows.map(row => sheetDataToObject(photoHeader, row))
-        .filter(p => p.lang === lang && sourcePhotoIds.has(p.photoId))
-        .map(({ photoId, ...meta }) => ({ ...meta, id: photoId }));
+        .map(row => {
+            const metadataLang = getValueForKeys(row, ['lang']).toUpperCase();
+            const photoId = getValueForKeys(row, ['photoId', 'photo id']);
+            return {
+                metadataLang,
+                photoId,
+                newName: getValueForKeys(row, ['newName', 'new name']),
+                caption: getValueForKeys(row, ['caption']),
+                alt: getValueForKeys(row, ['alt']),
+                description: getValueForKeys(row, ['description']),
+            };
+        })
+        .filter(meta => meta.metadataLang === lang && sourcePhotoIds.has(meta.photoId))
+        .map(({ metadataLang, photoId, ...meta }) => ({ ...meta, id: photoId }));
 
     return { description, photos };
 }

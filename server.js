@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
@@ -81,14 +82,15 @@ app.post('/api/tours/:name/accept', async (req, res) => {
 
 
 // Serve static files
-const staticPath = path.resolve(__dirname);
-app.use(express.static(staticPath));
-app.use('/src', express.static(path.join(staticPath, 'src')));
-
-// For any other request, serve index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(staticPath, 'index.html'));
-});
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  console.warn('Dist folder not found. The frontend will not be served by Express. Run "npm run build" to generate it.');
+}
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
