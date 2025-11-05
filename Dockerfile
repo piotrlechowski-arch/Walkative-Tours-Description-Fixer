@@ -11,6 +11,7 @@ RUN npm ci
 # Copy source and build the frontend
 # Force rebuild by adding a build argument that changes with each build
 # This MUST be before COPY to invalidate the cache for that layer
+# Build ID: 20251105_112616
 ARG CACHEBUST
 COPY . .
 # Clear Vite cache to ensure fresh build
