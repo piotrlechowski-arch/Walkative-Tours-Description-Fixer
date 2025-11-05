@@ -105,11 +105,17 @@ Description: ${tour.highlightsDescription}
     for (let i = 0; i < photos.length; i += BATCH_SIZE) {
       const batch = photos.slice(i, i + BATCH_SIZE);
       const photoParts = await Promise.all(batch.map(p => urlToGenerativePart(p.url)));
+      // Use only short description and highlights summary for photo analysis to save tokens
+      // Remove HTML tags from long description if present and take first 500 chars
+      const longSummary = description.long
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .substring(0, 500) // Take first 500 characters
+        .trim();
       const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
 <en_short>${description.short}</en_short>
-<en_long>${description.long}</en_long>
+<en_long_summary>${longSummary}</en_long_summary>
 <en_highlights>${description.highlights}</en_highlights>
 <photo_ids>${batch.map(p => p.id).join(', ')}</photo_ids>
 `;
@@ -164,11 +170,17 @@ Description: ${tour.highlightsDescription}
     for (let i = 0; i < photos.length; i += BATCH_SIZE) {
       const batch = photos.slice(i, i + BATCH_SIZE);
       const photoParts = await Promise.all(batch.map(p => urlToGenerativePart(p.url)));
+      // Use only short description and highlights summary for photo analysis to save tokens
+      // Remove HTML tags from long description if present and take first 500 chars
+      const longSummary = enTour.long
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .substring(0, 500) // Take first 500 characters
+        .trim();
       const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
 <en_short>${enTour.short}</en_short>
-<en_long>${enTour.long}</en_long>
+<en_long_summary>${longSummary}</en_long_summary>
 <en_highlights>${enTour.highlights}</en_highlights>
 <photo_ids>${batch.map(p => p.id).join(', ')}</photo_ids>
 `;
