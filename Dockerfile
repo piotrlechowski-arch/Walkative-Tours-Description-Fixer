@@ -9,10 +9,11 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # Copy source and build the frontend
+# Force rebuild by adding a build argument that changes with each build
+# This MUST be before COPY to invalidate the cache for that layer
+ARG CACHEBUST
 COPY . .
-# Force rebuild by adding a build argument
-ARG CACHEBUST=1
-RUN npm run build
+RUN echo "Cache bust: $CACHEBUST" && npm run build
 
 # -----------------------------------------------------------------------------
 # Runtime stage: slim Node.js image with only production dependencies
