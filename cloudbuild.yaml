@@ -3,7 +3,7 @@ steps:
     args:
       - "build"
       - "--build-arg"
-      - "CACHEBUST=$COMMIT_SHA"
+      - "CACHEBUST=$$COMMIT_SHA"
       - "-t"
       - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$REPO_NAME:$COMMIT_SHA"
       - "."
