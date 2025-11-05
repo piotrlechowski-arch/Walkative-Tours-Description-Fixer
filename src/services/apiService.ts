@@ -1,45 +1,45 @@
 
 
 import { Tour, Photo, TourNameAndStatus, ProcessedTourData, Language } from '../types';
+import { mockApiService } from './mockApiService';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const errorData = await response.json();
+      message = errorData.error || message;
+    } catch {
+      // ignore JSON parsing errors
+    }
+    throw new Error(message);
   }
   return response.json();
 }
 
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
-  return handleResponse<T>(response);
-}
-
 export const apiService = {
+  // Use mockApiService for tour data (hardcoded from Excel)
   getTours: (): Promise<TourNameAndStatus[]> => {
-    return apiFetch<TourNameAndStatus[]>('/api/tours');
+    return mockApiService.getTours();
   },
 
   getTourDetails: (name: string): Promise<{ tour: Tour; photos: Photo[] }> => {
-    return apiFetch<{ tour: Tour; photos: Photo[] }>(`/api/tours/${encodeURIComponent(name)}`);
+    return mockApiService.getTourDetails(name);
   },
 
   getCanonicalEnData: (name: string): Promise<ProcessedTourData> => {
-    return apiFetch<ProcessedTourData>(`/api/tours/${encodeURIComponent(name)}/canonical-en`);
+    return mockApiService.getCanonicalEnData(name);
   },
 
   getLocalizedData: (tourName: string, lang: Language): Promise<ProcessedTourData> => {
-    return apiFetch<ProcessedTourData>(`/api/tours/${encodeURIComponent(tourName)}/localized/${lang.toLowerCase()}`);
+    return mockApiService.getLocalizedData(tourName, lang);
   },
 
   acceptChanges: (tourName: string, mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean): Promise<void> => {
-    return apiFetch<void>(`/api/tours/${encodeURIComponent(tourName)}/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, data, renameInDrive }),
-    });
+    return mockApiService.acceptChanges(tourName, mode, data, renameInDrive);
   },
   
+  // Keep Gemini API calls going through the backend
   generate: async (body: object): Promise<any> => {
     const response = await fetch('/api/generate', {
       method: 'POST',

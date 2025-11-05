@@ -27,6 +27,64 @@ const getDriveClient = () => {
     return google.drive({ version: 'v3', auth });
 };
 
+// Helper function to clear existing entries for a specific tour and language
+async function clearExistingEntries(sheets, sheetName, tourName, lang, isPhotoMetadata = false) {
+    try {
+        // Get all data from the sheet
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A:Z`,
+        });
+        const values = response.data.values || [];
+
+        if (values.length === 0) return;
+
+        // Get photo IDs for this tour (needed for photo metadata clearing)
+        let tourPhotoIds = [];
+        if (isPhotoMetadata) {
+            const { photos } = await getTourDetails(tourName);
+            tourPhotoIds = photos.map(p => p.id);
+        }
+
+        // Find rows that match the criteria
+        const rowsToClear = [];
+        for (let i = 0; i < values.length; i++) {
+            const row = values[i];
+            if (isPhotoMetadata) {
+                // For Photos_Metadata: clear if photoId belongs to tour AND lang matches
+                const photoId = row[0]; // Column A
+                const rowLang = row[1]; // Column B
+                if (tourPhotoIds.includes(photoId) && rowLang === lang) {
+                    rowsToClear.push(i + 1);
+                }
+            } else {
+                // For tour sheets: clear if tour name matches (column A)
+                if (row[0] === tourName) {
+                    rowsToClear.push(i + 1);
+                }
+            }
+        }
+
+        if (rowsToClear.length > 0) {
+            // Clear the rows by setting them to empty arrays
+            const requests = rowsToClear.map(rowIndex => ({
+                range: `${sheetName}!A${rowIndex}:Z${rowIndex}`,
+                values: [[]]
+            }));
+
+            await sheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: SPREADSHEET_ID,
+                requestBody: {
+                    valueInputOption: 'USER_ENTERED',
+                    data: requests
+                }
+            });
+        }
+    } catch (e) {
+        console.warn(`Could not clear existing entries in ${sheetName}:`, e.message);
+    }
+}
+
 // --- HELPERS ---
 const toTrimmedString = (value) => {
     if (value === undefined || value === null) return '';
@@ -258,22 +316,18 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
     const lang = mode.toUpperCase();
     const descSheetName = `Tours_${lang}`;
 
-    // 1. Write/Update description
-    // To prevent duplicates, we first need to find if a row exists and update it, or append if not.
-    // For simplicity in this context, we will continue to append, but a real-world app should handle updates.
-    // A simple way to handle this without complex searches would be to clear existing entries for the tour before appending.
+    // 1. Clear existing entries for this tour and language, then write new description
+    await clearExistingEntries(sheets, descSheetName, tourName, lang, false);
     const descData = [tourName, data.description.short, data.description.long, data.description.highlights];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: `${descSheetName}!A1`,
         valueInputOption: 'USER_ENTERED',
-        // Note: A more robust solution might use batchUpdate to find and replace or delete and insert.
-        // For this app's flow, append might be acceptable if old versions are manually cleared or ignored.
         requestBody: { values: [descData] }
     });
 
-    // 2. Write photo metadata
-    // Similar to descriptions, this appends. A robust solution would update existing metadata.
+    // 2. Clear existing photo metadata for this tour and language, then write new metadata
+    await clearExistingEntries(sheets, 'Photos_Metadata', tourName, lang, true);
     const photoMetaData = data.photos.map(p => [p.id, lang, p.newName, p.caption, p.alt, p.description || '']);
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
