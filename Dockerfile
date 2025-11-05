@@ -13,6 +13,8 @@ RUN npm ci
 # This MUST be before COPY to invalidate the cache for that layer
 ARG CACHEBUST
 COPY . .
+# Clear Vite cache to ensure fresh build
+RUN rm -rf node_modules/.vite dist
 RUN echo "Cache bust: $CACHEBUST" && npm run build
 
 # -----------------------------------------------------------------------------
