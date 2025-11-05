@@ -98,8 +98,8 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, settings.prompts.qcEN);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    // Process photos in batches to avoid token limit (max 10 photos per batch)
-    const BATCH_SIZE = 10;
+    // Process photos one by one to avoid token limit
+    const BATCH_SIZE = 1;
     const photoMetadata: any[] = [];
     
     for (let i = 0; i < photos.length; i += BATCH_SIZE) {
@@ -157,8 +157,8 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, qcSystemPrompt);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    // Process photos in batches to avoid token limit (max 10 photos per batch)
-    const BATCH_SIZE = 10;
+    // Process photos one by one to avoid token limit
+    const BATCH_SIZE = 1;
     const photoMetadata: any[] = [];
     
     for (let i = 0; i < photos.length; i += BATCH_SIZE) {
