@@ -98,25 +98,34 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, settings.prompts.qcEN);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    const photoParts = await Promise.all(photos.map(p => urlToGenerativePart(p.url)));
-    const photoPromptText = `
+    // Process photos in batches to avoid token limit (max 10 photos per batch)
+    const BATCH_SIZE = 10;
+    const photoMetadata: any[] = [];
+    
+    for (let i = 0; i < photos.length; i += BATCH_SIZE) {
+      const batch = photos.slice(i, i + BATCH_SIZE);
+      const photoParts = await Promise.all(batch.map(p => urlToGenerativePart(p.url)));
+      const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
 <en_short>${description.short}</en_short>
 <en_long>${description.long}</en_long>
 <en_highlights>${description.highlights}</en_highlights>
-<photo_ids>${photos.map(p => p.id).join(', ')}</photo_ids>
+<photo_ids>${batch.map(p => p.id).join(', ')}</photo_ids>
 `;
-    
-    const allParts = [{ text: photoPromptText }, ...photoParts];
+      
+      const allParts = [{ text: photoPromptText }, ...photoParts];
 
-    const photoResult = await apiService.generate({
-        model: settings.models.image,
-        contents: { parts: allParts },
-        config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', 'EN') }
-    });
+      const photoResult = await apiService.generate({
+          model: settings.models.image,
+          contents: { parts: allParts },
+          config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', 'EN') }
+      });
+      
+      const batchMetadata = parsePhotoMetadataResponse(photoResult.text);
+      photoMetadata.push(...batchMetadata);
+    }
     
-    const photoMetadata = parsePhotoMetadataResponse(photoResult.text);
     return { description, photos: photoMetadata };
   },
 
@@ -148,25 +157,34 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, qcSystemPrompt);
     const description = parseDescriptionResponse(fixedDescriptionText);
 
-    const photoParts = await Promise.all(photos.map(p => urlToGenerativePart(p.url)));
-    const photoPromptText = `
+    // Process photos in batches to avoid token limit (max 10 photos per batch)
+    const BATCH_SIZE = 10;
+    const photoMetadata: any[] = [];
+    
+    for (let i = 0; i < photos.length; i += BATCH_SIZE) {
+      const batch = photos.slice(i, i + BATCH_SIZE);
+      const photoParts = await Promise.all(batch.map(p => urlToGenerativePart(p.url)));
+      const photoPromptText = `
 <city>${tour.city}</city>
 <name>${tour.name}</name>
 <en_short>${enTour.short}</en_short>
 <en_long>${enTour.long}</en_long>
 <en_highlights>${enTour.highlights}</en_highlights>
-<photo_ids>${photos.map(p => p.id).join(', ')}</photo_ids>
+<photo_ids>${batch.map(p => p.id).join(', ')}</photo_ids>
 `;
-    
-    const allParts = [{ text: photoPromptText }, ...photoParts];
+      
+      const allParts = [{ text: photoPromptText }, ...photoParts];
 
-    const photoResult = await apiService.generate({
-        model: settings.models.image,
-        contents: { parts: allParts },
-        config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', lang) }
-    });
+      const photoResult = await apiService.generate({
+          model: settings.models.image,
+          contents: { parts: allParts },
+          config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', lang) }
+      });
 
-    const photoMetadata = parsePhotoMetadataResponse(photoResult.text);
+      const batchMetadata = parsePhotoMetadataResponse(photoResult.text);
+      photoMetadata.push(...batchMetadata);
+    }
+
     return { description, photos: photoMetadata };
   },
   
