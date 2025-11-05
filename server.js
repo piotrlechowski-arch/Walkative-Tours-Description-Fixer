@@ -37,38 +37,25 @@ app.post('/api/generate', async (req, res) => {
       throw new Error("contents is required in request body");
     }
     
-    // Convert contents to proper format: [{ parts: [...] }]
-    let normalizedContents;
-    if (typeof contents === 'string') {
-      // If contents is a string, wrap it in the proper format
-      normalizedContents = [{ parts: [{ text: contents }] }];
-    } else if (contents && contents.parts && Array.isArray(contents.parts)) {
-      // If contents is already { parts: [...] }, wrap it in an array
-      normalizedContents = [{ parts: contents.parts }];
-    } else if (Array.isArray(contents)) {
-      // If contents is already an array, use it as-is
-      normalizedContents = contents;
-    } else {
-      throw new Error(`Invalid contents format. Expected string, { parts: [...] }, or array. Got: ${typeof contents}`);
-    }
-    
     // Get the model (default to gemini-2.5-pro if not specified)
     const modelName = model || 'gemini-2.5-pro';
     
-    // Build model config with system instruction if provided
-    const modelConfig = { model: modelName };
-    if (config && config.systemInstruction) {
-      modelConfig.systemInstruction = config.systemInstruction;
+    // Build request object
+    const request = {
+      model: modelName,
+      contents: contents, // API accepts string, array, or object directly
+    };
+    
+    // Add config if provided
+    if (config) {
+      request.config = config;
     }
     
-    const geminiModel = ai.getGenerativeModel(modelConfig);
-    
-    // Call generateContent with proper format
-    const result = await geminiModel.generateContent(normalizedContents);
-    const response = await result.response;
+    // Call generateContent using models API
+    const response = await ai.models.generateContent(request);
     
     // Extract text from response
-    const text = response.text();
+    const text = response.text;
     
     res.json({ text });
   } catch (error) {
