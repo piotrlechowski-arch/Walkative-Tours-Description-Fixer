@@ -1,21 +1,6 @@
-/**
- * MOCK API SERVICE - HARDCODED TOUR DATA FROM EXCEL
- * =================================================
- * This file contains 195 tours and 1138 photos parsed from Tours Description Fixer-2.xlsx
- * Last updated: 2025-11-05
- * Build timestamp: $(date +%Y%m%d_%H%M%S)
- * 
- * DATA SOURCE: Excel file (not Google Sheets)
- * TOURS: 195 tours from cities across Europe
- * PHOTOS: 1138 photo entries with metadata
- * 
- * This replaces the old mock data (Krakow, Warsaw, Gdansk) with real tour data.
- */
-
 
 import { Tour, Photo, TourNameAndStatus, TourDescription, ProcessedTourData, Language, PhotoMetadata } from '../types';
 
-// UNIQUE_BUILD_MARKER_20251105105133_ANTWERP_DATA_IS_HERE
 const MOCK_TOURS: Tour[] = [
   {
     "city": "Antwerp",
@@ -12521,5 +12506,4 @@ export const mockApiService = {
 
     console.log('--- ACCEPTANCE COMPLETE ---');
   },
-};
-// Build timestamp: 1762334650
+};// FORCE REBUILD 1762337218
