@@ -29,11 +29,52 @@ app.post('/api/generate', async (req, res) => {
         throw new Error("API_KEY environment variable is not set.");
     }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent(req.body);
-    res.json(response);
+    
+    // Normalize the request format for Gemini API
+    const { model, contents, config } = req.body;
+    
+    if (!contents) {
+      throw new Error("contents is required in request body");
+    }
+    
+    // Convert contents to proper format: [{ parts: [...] }]
+    let normalizedContents;
+    if (typeof contents === 'string') {
+      // If contents is a string, wrap it in the proper format
+      normalizedContents = [{ parts: [{ text: contents }] }];
+    } else if (contents && contents.parts && Array.isArray(contents.parts)) {
+      // If contents is already { parts: [...] }, wrap it in an array
+      normalizedContents = [{ parts: contents.parts }];
+    } else if (Array.isArray(contents)) {
+      // If contents is already an array, use it as-is
+      normalizedContents = contents;
+    } else {
+      throw new Error(`Invalid contents format. Expected string, { parts: [...] }, or array. Got: ${typeof contents}`);
+    }
+    
+    // Get the model (default to gemini-2.5-pro if not specified)
+    const modelName = model || 'gemini-2.5-pro';
+    
+    // Build model config with system instruction if provided
+    const modelConfig = { model: modelName };
+    if (config && config.systemInstruction) {
+      modelConfig.systemInstruction = config.systemInstruction;
+    }
+    
+    const geminiModel = ai.getGenerativeModel(modelConfig);
+    
+    // Call generateContent with proper format
+    const result = await geminiModel.generateContent(normalizedContents);
+    const response = await result.response;
+    
+    // Extract text from response
+    const text = response.text();
+    
+    res.json({ text });
   } catch (error) {
     console.error('Error calling Gemini API:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    res.status(500).json({ error: errorMessage });
   }
 });
 
