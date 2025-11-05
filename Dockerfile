@@ -10,6 +10,8 @@ RUN npm ci
 
 # Copy source and build the frontend
 COPY . .
+# Force rebuild by adding a build argument
+ARG CACHEBUST=1
 RUN npm run build
 
 # -----------------------------------------------------------------------------
