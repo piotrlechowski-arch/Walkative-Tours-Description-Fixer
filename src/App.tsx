@@ -8,7 +8,6 @@ import { TourSelector } from './components/TourSelector';
 import { EditorView } from './components/EditorView';
 import { SettingsView } from './components/SettingsView';
 import { LoadingSpinner } from './components/LoadingSpinner';
-import { PhotoAnalyzerView } from './components/PhotoAnalyzerView';
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('editor');
@@ -136,69 +135,6 @@ const App: React.FC = () => {
     }
   }, [sourceTour, sourcePhotos, settings, canonicalEnData]);
 
-  // NEW: Separate handler for description only
-  const handleGenerateDescription = useCallback(async (mode: Language | 'EN', feedback: string) => {
-    if (!sourceTour) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      let description;
-      if (mode === 'EN') {
-        description = await geminiService.normalizeDescriptionOnly(sourceTour, settings, feedback);
-      } else {
-        if (!canonicalEnData) {
-          throw new Error("Cannot localize because canonical English data is not available. Please switch to the EN tab, generate, and accept the content first.");
-        }
-        description = await geminiService.localizeDescriptionOnly(sourceTour, canonicalEnData.description, mode, feedback, settings);
-      }
-      // Update processedData with new description, keep existing photos if any
-      setProcessedData(prev => ({
-        description,
-        photos: prev?.photos || []
-      }));
-      console.log('Generated Description:', description);
-    } catch (err) {
-      setError(`Wystąpił błąd podczas generowania opisu: ${err instanceof Error ? err.message : String(err)}`);
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sourceTour, settings, canonicalEnData]);
-
-  // NEW: Separate handler for photos only
-  const handleGeneratePhotos = useCallback(async (mode: Language | 'EN') => {
-    if (!sourceTour || !processedData?.description) {
-      setError('Najpierw wygeneruj opis przed wygenerowaniem metadanych zdjęć.');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      let photos;
-      if (mode === 'EN') {
-        // For EN: analyze photos from scratch
-        photos = await geminiService.analyzePhotosOnly(sourceTour, processedData.description, sourcePhotos, settings);
-      } else {
-        // For localization: translate existing EN photo metadata
-        if (!canonicalEnData || !canonicalEnData.photos || canonicalEnData.photos.length === 0) {
-          throw new Error("Cannot localize photos because canonical English photo metadata is not available. Please generate and accept EN photos first.");
-        }
-        photos = await geminiService.translatePhotosOnly(canonicalEnData.photos, mode, settings);
-      }
-      // Update processedData with new photos, keep existing description
-      setProcessedData(prev => ({
-        description: prev!.description,
-        photos
-      }));
-      console.log('Generated Photos:', photos);
-    } catch (err) {
-      setError(`Wystąpił błąd podczas generowania metadanych zdjęć: ${err instanceof Error ? err.message : String(err)}`);
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sourceTour, sourcePhotos, settings, canonicalEnData, processedData]);
-
   const handleAccept = useCallback(async (mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean) => {
     if (!sourceTour) return;
     setIsLoading(true);
@@ -248,8 +184,6 @@ const App: React.FC = () => {
                 acceptedLocalizedData={acceptedLocalizedData}
                 setAcceptedLocalizedData={setAcceptedLocalizedData}
                 onGenerate={handleGenerate}
-                onGenerateDescription={handleGenerateDescription}
-                onGeneratePhotos={handleGeneratePhotos}
                 onAccept={handleAccept}
                 onLoadCanonicalEn={handleLoadCanonicalEn}
                 onLoadLocalizedData={handleLoadLocalizedData}
@@ -260,7 +194,6 @@ const App: React.FC = () => {
           </>
         )}
         {view === 'settings' && <SettingsView settings={settings} setSettings={setSettings} />}
-        {view === 'analyzer' && <PhotoAnalyzerView settings={settings} />}
       </main>
     </div>
   );

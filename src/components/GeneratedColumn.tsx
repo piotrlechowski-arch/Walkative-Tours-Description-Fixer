@@ -7,9 +7,7 @@ interface GeneratedColumnProps {
   processedData: ProcessedTourData | null;
   sourcePhotos: Photo[];
   setProcessedData: React.Dispatch<React.SetStateAction<ProcessedTourData | null>>;
-  onGenerate?: () => void; // Optional: for backward compatibility
-  onGenerateDescription?: () => void; // NEW: separate description generation
-  onGeneratePhotos?: () => void; // NEW: separate photo generation
+  onGenerate: () => void;
   onAccept: () => void;
   isLoading: boolean;
   feedback: string;
@@ -107,9 +105,7 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
   processedData,
   sourcePhotos,
   setProcessedData,
-  onGenerate, // Old unified handler (kept for backward compatibility)
-  onGenerateDescription, // NEW: separate description handler
-  onGeneratePhotos, // NEW: separate photos handler
+  onGenerate,
   onAccept,
   isLoading,
   feedback,
@@ -124,12 +120,7 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
   onCancel,
 }) => {
   const isDataReady = processedData !== null;
-  const hasDescription = processedData?.description !== undefined && processedData?.description !== null;
-  const hasPhotos = processedData?.photos !== undefined && processedData?.photos?.length > 0;
   const [assistantLoading, setAssistantLoading] = useState<string | null>(null);
-  
-  // Use separate handlers if provided, otherwise fall back to unified handler
-  const useSeparateHandlers = onGenerateDescription !== undefined || onGeneratePhotos !== undefined;
   
   const handleDescriptionChange = (field: 'short' | 'long' | 'highlights', value: string) => {
     if (!processedData) return;
@@ -307,41 +298,13 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
               </div>
               <div className="flex items-center space-x-2 w-full sm:w-auto flex-wrap gap-2">
                 {/* Main "Generate" button - generates both description and photos simultaneously */}
-                {onGenerate && (
-                  <button
-                    onClick={onGenerate}
-                    disabled={isLoading}
-                    className="flex-1 sm:flex-initial flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                  >
-                    {isDataReady ? 'Regeneruj Wszystko' : 'Generuj'}
-                  </button>
-                )}
-                
-                {/* Optional separate buttons for individual generation */}
-                {useSeparateHandlers && (
-                  <>
-                    {onGenerateDescription && (
-                      <button
-                        onClick={onGenerateDescription}
-                        disabled={isLoading}
-                        className="flex-1 sm:flex-initial flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                        title="Tylko opis"
-                      >
-                        {hasDescription ? 'Regeneruj Opis' : 'Generuj Opis'}
-                      </button>
-                    )}
-                    {onGeneratePhotos && (
-                      <button
-                        onClick={onGeneratePhotos}
-                        disabled={isLoading || !hasDescription}
-                        className="flex-1 sm:flex-initial flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={!hasDescription ? 'Najpierw wygeneruj opis' : 'Tylko zdjęcia'}
-                      >
-                        {hasPhotos ? 'Regeneruj Zdjęcia' : 'Generuj Zdjęcia'}
-                      </button>
-                    )}
-                  </>
-                )}
+                <button
+                  onClick={onGenerate}
+                  disabled={isLoading}
+                  className="flex-1 sm:flex-initial flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {isDataReady ? 'Regeneruj Wszystko' : 'Generuj'}
+                </button>
                 
                 {/* Accept button */}
                 <button

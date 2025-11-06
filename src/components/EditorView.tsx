@@ -15,8 +15,6 @@ interface EditorViewProps {
   acceptedLocalizedData: ProcessedTourData | null;
   setAcceptedLocalizedData: React.Dispatch<React.SetStateAction<ProcessedTourData | null>>;
   onGenerate: (mode: Mode, feedback: string, renameInDrive: boolean) => void;
-  onGenerateDescription?: (mode: Mode, feedback: string) => void; // NEW: separate description generation
-  onGeneratePhotos?: (mode: Mode) => void; // NEW: separate photo generation
   onAccept: (mode: Mode, data: ProcessedTourData, renameInDrive: boolean) => void;
   onLoadCanonicalEn: () => Promise<void>;
   onLoadLocalizedData: (lang: Language) => Promise<void>;
@@ -34,8 +32,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   acceptedLocalizedData,
   setAcceptedLocalizedData,
   onGenerate,
-  onGenerateDescription, // NEW: separate description handler
-  onGeneratePhotos, // NEW: separate photos handler
   onAccept,
   onLoadCanonicalEn,
   onLoadLocalizedData,
@@ -93,18 +89,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   
   const handleGenerateClick = () => {
       onGenerate(mode, feedback, renameInDrive);
-  };
-
-  const handleGenerateDescriptionClick = () => {
-      if (onGenerateDescription) {
-        onGenerateDescription(mode, feedback);
-      }
-  };
-
-  const handleGeneratePhotosClick = () => {
-      if (onGeneratePhotos) {
-        onGeneratePhotos(mode);
-      }
   };
   
   const handleAcceptClick = () => {
@@ -191,8 +175,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
             sourcePhotos={sourcePhotos}
             setProcessedData={setProcessedData}
             onGenerate={handleGenerateClick}
-            onGenerateDescription={onGenerateDescription ? handleGenerateDescriptionClick : undefined}
-            onGeneratePhotos={onGeneratePhotos ? handleGeneratePhotosClick : undefined}
             onAccept={handleAcceptClick}
             isLoading={isLoading}
             feedback={feedback}
@@ -268,8 +250,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
               sourcePhotos={sourcePhotos}
               setProcessedData={setProcessedData}
               onGenerate={handleGenerateClick}
-              onGenerateDescription={onGenerateDescription ? handleGenerateDescriptionClick : undefined}
-              onGeneratePhotos={onGeneratePhotos ? handleGeneratePhotosClick : undefined}
               onAccept={handleAcceptClick}
               isLoading={isLoading}
               feedback={feedback}

@@ -1,5 +1,5 @@
 export type Language = 'PL' | 'DE' | 'ES';
-export type View = 'editor' | 'settings' | 'analyzer';
+export type View = 'editor' | 'settings';
 export type Mode = 'EN' | Language | 'CANONICAL_EN';
 
 export interface TourDescription {
