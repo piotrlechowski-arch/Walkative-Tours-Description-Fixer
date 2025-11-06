@@ -1,7 +1,6 @@
 
 
 import { Tour, Photo, TourNameAndStatus, ProcessedTourData, Language } from '../types';
-import { mockApiService } from './mockApiService';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -18,25 +17,36 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export const apiService = {
-  // Use mockApiService for tour data (hardcoded from Excel)
-  getTours: (): Promise<TourNameAndStatus[]> => {
-    return mockApiService.getTours();
+  // Restore Google Sheets API integration
+  getTours: async (): Promise<TourNameAndStatus[]> => {
+    const response = await fetch('/api/tours');
+    return handleResponse(response);
   },
 
-  getTourDetails: (name: string): Promise<{ tour: Tour; photos: Photo[] }> => {
-    return mockApiService.getTourDetails(name);
+  getTourDetails: async (name: string): Promise<{ tour: Tour; photos: Photo[] }> => {
+    const response = await fetch(`/api/tours/${encodeURIComponent(name)}`);
+    return handleResponse(response);
   },
 
-  getCanonicalEnData: (name: string): Promise<ProcessedTourData> => {
-    return mockApiService.getCanonicalEnData(name);
+  getCanonicalEnData: async (name: string): Promise<ProcessedTourData> => {
+    const response = await fetch(`/api/tours/${encodeURIComponent(name)}/canonical-en`);
+    return handleResponse(response);
   },
 
-  getLocalizedData: (tourName: string, lang: Language): Promise<ProcessedTourData> => {
-    return mockApiService.getLocalizedData(tourName, lang);
+  getLocalizedData: async (tourName: string, lang: Language): Promise<ProcessedTourData> => {
+    const response = await fetch(`/api/tours/${encodeURIComponent(tourName)}/localized/${lang.toLowerCase()}`);
+    return handleResponse(response);
   },
 
-  acceptChanges: (tourName: string, mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean): Promise<void> => {
-    return mockApiService.acceptChanges(tourName, mode, data, renameInDrive);
+  acceptChanges: async (tourName: string, mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean): Promise<void> => {
+    const response = await fetch(`/api/tours/${encodeURIComponent(tourName)}/accept`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ mode, data, renameInDrive }),
+    });
+    return handleResponse(response);
   },
   
   // Keep Gemini API calls going through the backend

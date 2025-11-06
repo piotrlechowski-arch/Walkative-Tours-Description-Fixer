@@ -1,0 +1,33 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "--build-arg"
+      - "CACHEBUST=$COMMIT_SHA"
+      - "-t"
+      - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$REPO_NAME:$COMMIT_SHA"
+      - "."
+    id: "Build"
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$REPO_NAME:$COMMIT_SHA"
+    id: "Push"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "$_SERVICE_NAME"
+      - "--image"
+      - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$REPO_NAME:$COMMIT_SHA"
+      - "--region"
+      - "$_DEPLOY_REGION"
+      - "--platform"
+      - "managed"
+      - "--quiet"
+    id: "Deploy"
+images:
+  - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME/$REPO_NAME:$COMMIT_SHA"
+options:
+  logging: CLOUD_LOGGING_ONLY

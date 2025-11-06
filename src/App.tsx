@@ -107,12 +107,24 @@ const App: React.FC = () => {
     try {
       let result;
       if (mode === 'EN') {
+        // Generate both description and photos simultaneously for EN
         result = await geminiService.normalizeAndAnalyze(sourceTour, sourcePhotos, settings, feedback);
       } else {
+        // For localization: translate both description and photo metadata simultaneously
         if (!canonicalEnData) {
           throw new Error("Cannot localize because canonical English data is not available. Please switch to the EN tab, generate, and accept the content first.");
         }
-        result = await geminiService.localizeAndAnalyze(sourceTour, canonicalEnData.description, sourcePhotos, mode, feedback, settings);
+        if (!canonicalEnData.photos || canonicalEnData.photos.length === 0) {
+          throw new Error("Cannot localize photos because canonical English photo metadata is not available. Please generate and accept EN photos first.");
+        }
+        result = await geminiService.localizeAndAnalyze(
+          sourceTour, 
+          canonicalEnData.description, 
+          canonicalEnData.photos, 
+          mode, 
+          feedback, 
+          settings
+        );
       }
       setProcessedData(result);
       console.log('Generated Data:', result);
@@ -123,6 +135,69 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   }, [sourceTour, sourcePhotos, settings, canonicalEnData]);
+
+  // NEW: Separate handler for description only
+  const handleGenerateDescription = useCallback(async (mode: Language | 'EN', feedback: string) => {
+    if (!sourceTour) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      let description;
+      if (mode === 'EN') {
+        description = await geminiService.normalizeDescriptionOnly(sourceTour, settings, feedback);
+      } else {
+        if (!canonicalEnData) {
+          throw new Error("Cannot localize because canonical English data is not available. Please switch to the EN tab, generate, and accept the content first.");
+        }
+        description = await geminiService.localizeDescriptionOnly(sourceTour, canonicalEnData.description, mode, feedback, settings);
+      }
+      // Update processedData with new description, keep existing photos if any
+      setProcessedData(prev => ({
+        description,
+        photos: prev?.photos || []
+      }));
+      console.log('Generated Description:', description);
+    } catch (err) {
+      setError(`Wystąpił błąd podczas generowania opisu: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sourceTour, settings, canonicalEnData]);
+
+  // NEW: Separate handler for photos only
+  const handleGeneratePhotos = useCallback(async (mode: Language | 'EN') => {
+    if (!sourceTour || !processedData?.description) {
+      setError('Najpierw wygeneruj opis przed wygenerowaniem metadanych zdjęć.');
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      let photos;
+      if (mode === 'EN') {
+        // For EN: analyze photos from scratch
+        photos = await geminiService.analyzePhotosOnly(sourceTour, processedData.description, sourcePhotos, settings);
+      } else {
+        // For localization: translate existing EN photo metadata
+        if (!canonicalEnData || !canonicalEnData.photos || canonicalEnData.photos.length === 0) {
+          throw new Error("Cannot localize photos because canonical English photo metadata is not available. Please generate and accept EN photos first.");
+        }
+        photos = await geminiService.translatePhotosOnly(canonicalEnData.photos, mode, settings);
+      }
+      // Update processedData with new photos, keep existing description
+      setProcessedData(prev => ({
+        description: prev!.description,
+        photos
+      }));
+      console.log('Generated Photos:', photos);
+    } catch (err) {
+      setError(`Wystąpił błąd podczas generowania metadanych zdjęć: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sourceTour, sourcePhotos, settings, canonicalEnData, processedData]);
 
   const handleAccept = useCallback(async (mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean) => {
     if (!sourceTour) return;
@@ -173,6 +248,8 @@ const App: React.FC = () => {
                 acceptedLocalizedData={acceptedLocalizedData}
                 setAcceptedLocalizedData={setAcceptedLocalizedData}
                 onGenerate={handleGenerate}
+                onGenerateDescription={handleGenerateDescription}
+                onGeneratePhotos={handleGeneratePhotos}
                 onAccept={handleAccept}
                 onLoadCanonicalEn={handleLoadCanonicalEn}
                 onLoadLocalizedData={handleLoadLocalizedData}

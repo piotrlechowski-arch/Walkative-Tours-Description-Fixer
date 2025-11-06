@@ -27,6 +27,24 @@ const getDriveClient = () => {
     return google.drive({ version: 'v3', auth });
 };
 
+// Helper function to convert Google Drive URLs to viewable format for thumbnails
+const convertDriveUrlToViewable = (url) => {
+    if (!url) return url;
+    
+    // Convert "https://drive.google.com/file/d/FILE_ID/view?usp=drivesdk"
+    // to thumbnail format which works better in <img> tags
+    const match = url.match(/\/d\/([^\/]+)/);
+    if (match) {
+        const fileId = match[1];
+        // Use thumbnail API with size parameter for better performance and reliability
+        // sz=w400 means width 400px (you can adjust: w200, w400, w800, etc.)
+        return `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+    }
+    
+    // Return original URL if pattern doesn't match
+    return url;
+};
+
 // Helper function to clear existing entries for a specific tour and language
 async function clearExistingEntries(sheets, sheetName, tourName, lang, isPhotoMetadata = false) {
     try {
@@ -216,25 +234,50 @@ export async function getTours() {
                     .filter(Boolean)
                 : [];
             statusData[sheet] = new Set(tourNames);
+            console.log(`Sheet ${sheet} has ${tourNames.length} tours:`, Array.from(tourNames).slice(0, 5));
         } catch(e) {
-            console.warn(`Could not read sheet ${sheet}, assuming no tours are completed.`);
+            console.warn(`Could not read sheet ${sheet}, assuming no tours are completed.`, e.message);
             statusData[sheet] = new Set();
         }
     }
 
-    return toursSource.map(tour => ({
-        name: tour.name,
-        statuses: {
-            enDesc: statusData['Tours_EN'].has(tour.name),
-            photosEn: statusData['Tours_EN'].has(tour.name), // Assume photos done with desc
-            plDesc: statusData['Tours_PL'].has(tour.name),
-            photosPl: statusData['Tours_PL'].has(tour.name),
-            deDesc: statusData['Tours_DE'].has(tour.name),
-            photosDe: statusData['Tours_DE'].has(tour.name),
-            esDesc: statusData['Tours_ES'].has(tour.name),
-            photosEs: statusData['Tours_ES'].has(tour.name),
-        },
-    }));
+    return toursSource.map(tour => {
+        const tourName = tour.name;
+        const normalizedTourName = toTrimmedString(tourName).toLowerCase();
+        
+        // Check if tour exists in each sheet (case-insensitive comparison)
+        const enDesc = Array.from(statusData['Tours_EN']).some(n => toTrimmedString(n).toLowerCase() === normalizedTourName);
+        const plDesc = Array.from(statusData['Tours_PL']).some(n => toTrimmedString(n).toLowerCase() === normalizedTourName);
+        const deDesc = Array.from(statusData['Tours_DE']).some(n => toTrimmedString(n).toLowerCase() === normalizedTourName);
+        const esDesc = Array.from(statusData['Tours_ES']).some(n => toTrimmedString(n).toLowerCase() === normalizedTourName);
+        
+        // Log status for debugging
+        if (plDesc || deDesc || esDesc) {
+            const matchingPL = Array.from(statusData['Tours_PL']).filter(n => toTrimmedString(n).toLowerCase() === normalizedTourName);
+            console.log(`Tour "${tourName}" status:`, {
+                enDesc,
+                plDesc,
+                deDesc,
+                esDesc,
+                matchingPLTours: matchingPL,
+                allPLTours: Array.from(statusData['Tours_PL']).slice(0, 10),
+            });
+        }
+        
+        return {
+            name: tourName,
+            statuses: {
+                enDesc,
+                photosEn: enDesc, // Assume photos done with desc
+                plDesc,
+                photosPl: plDesc,
+                deDesc,
+                photosDe: deDesc,
+                esDesc,
+                photosEs: esDesc,
+            },
+        };
+    });
 }
 
 export async function getTourDetails(name) {
@@ -254,12 +297,32 @@ export async function getTourDetails(name) {
     const photosRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Photos_Source!A:AZ' });
     const photoValues = photosRes.data.values || [];
     const [photosHeader = [], ...photosRows] = photoValues;
+    
+    console.log('Photos_Source header:', photosHeader);
+    console.log('Total photo rows:', photosRows.length);
+    console.log('Looking for photoIds:', tour.photoIds);
+    
     const allPhotos = photosRows.map(row => sheetDataToObject(photosHeader, row));
+    console.log('Sample photo objects (first 3):', allPhotos.slice(0, 3));
+    
     const photoIdSet = new Set(tour.photoIds);
     const photos = allPhotos
-        .filter(p => photoIdSet.has(p.id))
-        .map(p => ({ ...p, metadata: {} }));
+        .filter(p => {
+            // Handle both 'ID' (from sheet header) and 'id' (lowercase)
+            const photoId = p.ID || p.id;
+            const hasMatch = photoIdSet.has(photoId);
+            if (hasMatch) console.log('Found matching photo:', photoId);
+            return hasMatch;
+        })
+        .map(p => ({
+            ...p,
+            id: p.ID || p.id, // Normalize to lowercase 'id'
+            url: convertDriveUrlToViewable(p.URL || p.url), // Convert URL to viewable format
+            name: p.Name || p.name,
+            metadata: {}
+        }));
 
+    console.log('Filtered photos count:', photos.length);
     return { tour, photos };
 }
 
@@ -267,18 +330,43 @@ async function getAcceptedData(tourName, lang) {
     const sheets = getSheetsClient();
     const sheetName = `Tours_${lang}`;
     
-    // Get description data
+    // Get description data - column A is tour name, B is short, C is long, D is highlights
     const descRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${sheetName}!A:D` });
     const descValues = descRes.data.values || [];
-    const [descHeader = [], ...descRows] = descValues;
-    const tourDescData = descRows
-        .map(row => sheetDataToObject(descHeader, row))
-        .find(row => getValueForKeys(row, ['tourName', 'name']) === toTrimmedString(tourName));
-    if (!tourDescData) throw new Error(`Accepted data not found for tour "${tourName}" in sheet "${sheetName}"`);
+    
+    if (descValues.length === 0) {
+        throw new Error(`Sheet "${sheetName}" is empty. No accepted data available.`);
+    }
+    
+    const normalizedTourName = toTrimmedString(tourName).toLowerCase();
+    
+    // Find row by comparing column A (tour name) directly
+    let tourRow = null;
+    for (const row of descValues) {
+        if (row && row[0]) {
+            const rowTourName = toTrimmedString(row[0]).toLowerCase();
+            if (rowTourName === normalizedTourName) {
+                tourRow = row;
+                break;
+            }
+        }
+    }
+    
+    if (!tourRow) {
+        // Log available tour names for debugging
+        const availableNames = descValues
+            .filter(row => row && row[0])
+            .map(row => row[0])
+            .slice(0, 10);
+        console.error(`Accepted data not found for tour "${tourName}" in sheet "${sheetName}". Available names:`, availableNames);
+        throw new Error(`Accepted data not found for tour "${tourName}" in sheet "${sheetName}"`);
+    }
+    
+    // Column A = tour name, B = short, C = long, D = highlights
     const description = {
-        short: getValueForKeys(tourDescData, ['short']),
-        long: getValueForKeys(tourDescData, ['long']),
-        highlights: getValueForKeys(tourDescData, ['highlights', 'highlightsDescription']),
+        short: toTrimmedString(tourRow[1] || ''),
+        long: toTrimmedString(tourRow[2] || ''),
+        highlights: toTrimmedString(tourRow[3] || ''),
     };
 
     // Get photo metadata
@@ -316,25 +404,113 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
     const lang = mode.toUpperCase();
     const descSheetName = `Tours_${lang}`;
 
+    console.log(`=== ACCEPT CHANGES ===`);
+    console.log(`Tour: ${tourName}, Mode: ${mode}, Lang: ${lang}`);
+    console.log(`Data object:`, JSON.stringify(data, null, 2));
+    console.log(`Description data present:`, !!data.description);
+    console.log(`Description keys:`, data.description ? Object.keys(data.description) : 'N/A');
+    console.log(`Photos count:`, data.photos?.length || 0);
+
     // 1. Clear existing entries for this tour and language, then write new description
-    await clearExistingEntries(sheets, descSheetName, tourName, lang, false);
-    const descData = [tourName, data.description.short, data.description.long, data.description.highlights];
-    await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${descSheetName}!A1`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [descData] }
-    });
+    if (!data.description) {
+        throw new Error(`Description is missing in data. Cannot save tour description without description object.`);
+    }
+    
+    if (!data.description.short || !data.description.long || !data.description.highlights) {
+        console.warn(`Incomplete description data:`, {
+            hasShort: !!data.description.short,
+            hasLong: !!data.description.long,
+            hasHighlights: !!data.description.highlights
+        });
+    }
+    
+    try {
+        // Find existing row for this tour in column A
+        const allRowsRes = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${descSheetName}!A:A`,
+        });
+        const allRows = allRowsRes.data.values || [];
+        let existingRowIndex = null;
+        
+        // Normalize tour name for comparison (case-insensitive, trimmed)
+        const normalizedTourName = toTrimmedString(tourName).toLowerCase();
+        
+        for (let i = 0; i < allRows.length; i++) {
+            const rowValue = toTrimmedString(allRows[i][0]);
+            if (rowValue.toLowerCase() === normalizedTourName) {
+                existingRowIndex = i + 1; // Sheet rows are 1-indexed
+                console.log(`Found existing row ${existingRowIndex} for tour "${tourName}" (matched "${rowValue}")`);
+                break;
+            }
+        }
+        
+        if (!existingRowIndex) {
+            console.log(`No existing row found for tour "${tourName}". Will append new row.`);
+        }
+        
+        const descData = [
+            tourName, 
+            data.description.short || '', 
+            data.description.long || '', 
+            data.description.highlights || ''
+        ];
+        
+        console.log(`Writing description to ${descSheetName}:`, {
+            tourName: descData[0],
+            existingRowIndex,
+            shortLength: descData[1]?.length || 0,
+            longLength: descData[2]?.length || 0,
+            highlightsLength: descData[3]?.length || 0
+        });
+        
+        let result;
+        if (existingRowIndex) {
+            // Update existing row (columns A, B, C, D)
+            result = await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${descSheetName}!A${existingRowIndex}:D${existingRowIndex}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [descData] }
+            });
+            console.log(`Updated existing row ${existingRowIndex} in ${descSheetName}`);
+        } else {
+            // Append new row if not found
+            result = await sheets.spreadsheets.values.append({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${descSheetName}!A1`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [descData] }
+            });
+            console.log(`Appended new row to ${descSheetName}`);
+        }
+        
+        console.log(`Description saved successfully to ${descSheetName}. Updated range:`, result.data.updatedRange);
+    } catch (error) {
+        console.error(`Error saving description:`, error);
+        throw new Error(`Failed to save description: ${error.message || String(error)}`);
+    }
 
     // 2. Clear existing photo metadata for this tour and language, then write new metadata
-    await clearExistingEntries(sheets, 'Photos_Metadata', tourName, lang, true);
-    const photoMetaData = data.photos.map(p => [p.id, lang, p.newName, p.caption, p.alt, p.description || '']);
-    await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: 'Photos_Metadata!A1',
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: photoMetaData },
-    });
+    try {
+        await clearExistingEntries(sheets, 'Photos_Metadata', tourName, lang, true);
+        if (data.photos && data.photos.length > 0) {
+            const photoMetaData = data.photos.map(p => [p.id, lang, p.newName, p.caption, p.alt, p.description || '']);
+            console.log(`Writing ${photoMetaData.length} photo metadata entries`);
+            await sheets.spreadsheets.values.append({
+                spreadsheetId: SPREADSHEET_ID,
+                range: 'Photos_Metadata!A1',
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: photoMetaData },
+            });
+            console.log(`Photo metadata saved successfully`);
+        } else {
+            console.log(`No photos to save`);
+        }
+    } catch (error) {
+        console.error(`Error saving photo metadata:`, error);
+        throw new Error(`Failed to save photo metadata: ${error.message || String(error)}`);
+    }
     
     // 3. Rename files in Drive if requested
     if (renameInDrive) {

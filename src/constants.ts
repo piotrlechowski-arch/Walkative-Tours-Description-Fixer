@@ -79,8 +79,22 @@ Dla każdego zdjęcia zwróć obiekt:
 
 Zasady:
 - Nie zmieniaj nazw własnych; używaj tych z kontekstu (dzielnice, katedry, place).
-- Nie zgaduj na siłę – jeśli niepewność, opisz neutralnie („widok na…”, „fragment…”).
+- Nie zgaduj na siłę – jeśli niepewność, opisz neutralnie („widok na…", „fragment…").
 - Zachowaj spójność z kanonicznym EN (brzmienie nazw, kolejność skojarzeń).
+- Wyjście JSON array: [ { "id": "photoId", "newName": "...", "caption": "...", "alt": "...", "description": "..." }, … ] – gdzie id = Photo ID z arkusza.`;
+
+export const PROMPT_PHOTO_TRANSLATE = `Przetłumacz metadane zdjęć z angielskiego na język {{LANG}}. NIE analizuj zdjęć ponownie - tylko przetłumacz istniejące angielskie metadane.
+
+Dla każdego zdjęcia:
+- newName – ZACHOWAJ TAKIE SAMO jak w angielskiej wersji (nie zmieniaj nazwy pliku).
+- caption – Przetłumacz na {{LANG}}, zachowując styl i ton, naturalna adaptacja (nie dosłowne tłumaczenie).
+- alt – Przetłumacz na {{LANG}}, zachowując limit ≤125 znaków.
+- description – Dla EN pozostaw oryginalny tekst; dla innych języków zostaw puste lub pomiń.
+
+Zasady:
+- Nie zmieniaj nazw własnych (dzielnice, katedry, place).
+- Zachowaj spójność z kanonicznym opisem EN wycieczki.
+- Styl: naturalny dla {{LANG}}, bez kalek językowych.
 - Wyjście JSON array: [ { "id": "photoId", "newName": "...", "caption": "...", "alt": "...", "description": "..." }, … ] – gdzie id = Photo ID z arkusza.`;
 
 
@@ -110,6 +124,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     localizeDE: PROMPT_LOCALIZE_DE,
     localizeES: PROMPT_LOCALIZE_ES,
     photoBase: PROMPT_PHOTO_BASE,
+    photoTranslate: PROMPT_PHOTO_TRANSLATE,
     qcEN: PROMPT_QC_EN,
     qcPL: PROMPT_QC_PL,
     qcDE: PROMPT_QC_DE,

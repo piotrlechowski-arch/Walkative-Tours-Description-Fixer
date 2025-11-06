@@ -51,32 +51,61 @@ function parsePhotoMetadataResponse(text: string): any[] {
 
 const urlToGenerativePart = async (url: string) => {
     try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const blob = await response.blob();
-        const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                 if (typeof reader.result !== 'string') return reject(new Error("Failed to read blob as string."));
-                 resolve(reader.result.split(',')[1]);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-        return { inlineData: { data: base64Data, mimeType: blob.type || 'image/jpeg' } };
+        // Extract fileId from Google Drive URL (supports multiple formats)
+        // Format 1: https://drive.google.com/thumbnail?id=FILE_ID&sz=w400
+        // Format 2: https://drive.google.com/file/d/FILE_ID/view?usp=drivesdk
+        // Format 3: https://drive.google.com/uc?id=FILE_ID
+        let fileId: string | null = null;
+        const thumbnailMatch = url.match(/[?&]id=([^&]+)/);
+        const fileMatch = url.match(/\/d\/([^\/]+)/);
+        const ucMatch = url.match(/\/uc\?id=([^&]+)/);
+        
+        if (thumbnailMatch) {
+            fileId = thumbnailMatch[1];
+        } else if (fileMatch) {
+            fileId = fileMatch[1];
+        } else if (ucMatch) {
+            fileId = ucMatch[1];
+        }
+        
+        if (fileId) {
+            // Use backend endpoint to fetch image with proper authentication
+            const response = await fetch(`/api/image/${fileId}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(`Backend error: ${errorData.error || response.statusText}`);
+            }
+            const { data, mimeType } = await response.json();
+            return { inlineData: { data, mimeType: mimeType || 'image/jpeg' } };
+        } else {
+            // Fallback: try direct fetch for non-Google Drive URLs
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const blob = await response.blob();
+            const base64Data = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                     if (typeof reader.result !== 'string') return reject(new Error("Failed to read blob as string."));
+                     resolve(reader.result.split(',')[1]);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            return { inlineData: { data: base64Data, mimeType: blob.type || 'image/jpeg' } };
+        }
     } catch (e) {
         console.error(`Could not fetch image from ${url}. Error:`, e);
-        return { inlineData: { data: '', mimeType: 'image/jpeg' } };
+        throw new Error(`Failed to load image: ${e instanceof Error ? e.message : String(e)}`);
     }
 };
 
 export const geminiService = {
-  normalizeAndAnalyze: async (
+  // NEW: Generate only description (no photos) for EN normalization
+  normalizeDescriptionOnly: async (
     tour: Tour,
-    photos: Photo[],
     settings: AppSettings,
     feedback: string
-  ): Promise<ProcessedTourData> => {
+  ): Promise<TourDescription> => {
     const feedbackTag = feedback ? `<feedback>${feedback}</feedback>\n` : '';
     const descriptionUserInput = `
       ${feedbackTag}<city>${tour.city}</city>
@@ -97,7 +126,17 @@ Description: ${tour.highlightsDescription}
 
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, settings.prompts.qcEN);
     const description = parseDescriptionResponse(fixedDescriptionText);
+    
+    return description;
+  },
 
+  // NEW: Generate only photo metadata for EN (requires description)
+  analyzePhotosOnly: async (
+    tour: Tour,
+    description: TourDescription,
+    photos: Photo[],
+    settings: AppSettings
+  ): Promise<any[]> => {
     // Process photos one by one to avoid token limit
     const BATCH_SIZE = 1;
     const photoMetadata: any[] = [];
@@ -132,17 +171,30 @@ Description: ${tour.highlightsDescription}
       photoMetadata.push(...batchMetadata);
     }
     
+    return photoMetadata;
+  },
+
+  // Existing method - now uses the separate functions
+  normalizeAndAnalyze: async (
+    tour: Tour,
+    photos: Photo[],
+    settings: AppSettings,
+    feedback: string
+  ): Promise<ProcessedTourData> => {
+    const description = await geminiService.normalizeDescriptionOnly(tour, settings, feedback);
+    const photoMetadata = await geminiService.analyzePhotosOnly(tour, description, photos, settings);
+    
     return { description, photos: photoMetadata };
   },
 
-  localizeAndAnalyze: async (
+  // NEW: Generate only localized description (no photos)
+  localizeDescriptionOnly: async (
     tour: Tour,
     enTour: TourDescription,
-    photos: Photo[],
     lang: Language,
     feedback: string,
     settings: AppSettings
-  ): Promise<ProcessedTourData> => {
+  ): Promise<TourDescription> => {
     const systemInstruction = settings.prompts[`localize${lang}` as keyof typeof settings.prompts];
     const localizationUserInput = `
 <feedback>${feedback || 'Brak'}</feedback>
@@ -162,7 +214,68 @@ Description: ${tour.highlightsDescription}
     const qcSystemPrompt = settings.prompts[`qc${lang}` as keyof AppSettings['prompts']];
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, qcSystemPrompt);
     const description = parseDescriptionResponse(fixedDescriptionText);
+    
+    return description;
+  },
 
+  // NEW: Translate photo metadata from EN to target language (does NOT analyze images)
+  translatePhotosOnly: async (
+    enPhotos: (PhotoMetadata & { id: string })[],
+    lang: Language,
+    settings: AppSettings
+  ): Promise<any[]> => {
+    if (!enPhotos || enPhotos.length === 0) {
+      return [];
+    }
+
+    // Prepare input with EN metadata for translation
+    const photosInput = enPhotos.map(p => ({
+      id: p.id,
+      newName: p.newName,
+      caption: p.caption,
+      alt: p.alt,
+      description: p.description || ''
+    }));
+
+    const translationInput = `
+Przetłumacz poniższe metadane zdjęć z angielskiego na język ${lang}.
+Ważne: Zachowaj newName bez zmian - każdy plik ma tylko jedną nazwę.
+
+Angielskie metadane:
+${JSON.stringify(photosInput, null, 2)}
+`;
+
+    const translationResult = await apiService.generate({
+      model: settings.models.text,
+      contents: translationInput,
+      config: { systemInstruction: settings.prompts.photoTranslate.replace('{{LANG}}', lang) }
+    });
+
+    const translatedMetadata = parsePhotoMetadataResponse(translationResult.text);
+    
+    // Ensure all IDs match and newName is preserved from EN
+    return translatedMetadata.map((translated: any) => {
+      const enPhoto = enPhotos.find(p => p.id === translated.id);
+      if (!enPhoto) {
+        throw new Error(`Photo ID ${translated.id} not found in EN photos`);
+      }
+      // Always preserve newName from EN version
+      return {
+        ...translated,
+        newName: enPhoto.newName, // Force same name as EN
+        description: lang === 'EN' ? (translated.description || enPhoto.description || '') : '' // Only EN has description
+      };
+    });
+  },
+
+  // DEPRECATED: This function analyzes photos from scratch (use translatePhotosOnly for localization instead)
+  analyzeLocalizedPhotosOnly: async (
+    tour: Tour,
+    enTour: TourDescription,
+    photos: Photo[],
+    lang: Language,
+    settings: AppSettings
+  ): Promise<any[]> => {
     // Process photos one by one to avoid token limit
     const BATCH_SIZE = 1;
     const photoMetadata: any[] = [];
@@ -197,6 +310,25 @@ Description: ${tour.highlightsDescription}
       photoMetadata.push(...batchMetadata);
     }
 
+    return photoMetadata;
+  },
+
+  // Existing method - now uses the separate functions
+  // For localization: translates description and photo metadata (does NOT re-analyze photos)
+  localizeAndAnalyze: async (
+    tour: Tour,
+    enTour: TourDescription,
+    enPhotos: (PhotoMetadata & { id: string })[],
+    lang: Language,
+    feedback: string,
+    settings: AppSettings
+  ): Promise<ProcessedTourData> => {
+    // Generate localized description
+    const description = await geminiService.localizeDescriptionOnly(tour, enTour, lang, feedback, settings);
+    
+    // Translate existing EN photo metadata (does NOT analyze images)
+    const photoMetadata = await geminiService.translatePhotosOnly(enPhotos, lang, settings);
+    
     return { description, photos: photoMetadata };
   },
   

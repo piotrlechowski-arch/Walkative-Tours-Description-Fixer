@@ -85,6 +85,7 @@ export interface AppSettings {
     localizeDE: string;
     localizeES: string;
     photoBase: string;
+    photoTranslate: string;
     qcEN: string;
     qcPL: string;
     qcDE: string;
