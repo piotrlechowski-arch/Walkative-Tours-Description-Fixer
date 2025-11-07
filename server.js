@@ -241,7 +241,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       return res.status(500).json({ error: 'OAuth 2.0 client not configured' });
     }
     
-    const { tokens } = await oauth2Client.getToken(code as string);
+    const { tokens } = await oauth2Client.getToken(String(code));
     
     if (!tokens.refresh_token) {
       return res.status(400).json({ error: 'Refresh token not received. Please try again.' });
