@@ -453,20 +453,28 @@ app.post('/api/tours/:name/upload-photo', async (req, res) => {
             return res.status(404).json({ error: `Photo with ID ${photoId} not found in Photos_Source` });
         }
         
+        // Get driveFileId from photo data (preferred) or extract from URL
+        const driveFileId = photo.driveFileId || photo.drivefileid || photo.DriveFileId || photo.DriveFileID || null;
+        let fileId = driveFileId;
+        
+        if (!fileId) {
+            // Fallback: extract from URL
+            const fileIdMatch = photoUrl.match(/[?&]id=([^&]+)/) || photoUrl.match(/\/d\/([^\/]+)/);
+            fileId = fileIdMatch ? fileIdMatch[1] : null;
+        }
+        
+        if (!fileId) {
+            return res.status(400).json({ error: 'Could not find driveFileId in Photos_Source or extract fileId from photoUrl' });
+        }
+        
         // Analyze photo using Gemini
         if (!process.env.API_KEY) {
             throw new Error("API_KEY environment variable is not set.");
         }
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        // Fetch image from Drive
-        const drive = getDriveClient(); // Already defined above
-        const fileIdMatch = photoUrl.match(/[?&]id=([^&]+)/) || photoUrl.match(/\/d\/([^\/]+)/);
-        const fileId = fileIdMatch ? fileIdMatch[1] : null;
-        
-        if (!fileId) {
-            return res.status(400).json({ error: 'Could not extract fileId from photoUrl' });
-        }
+        // Fetch image from Drive using Service Account (for reading)
+        const drive = getDriveClient();
         
         const imageResponse = await drive.files.get({ 
             fileId, 
@@ -487,6 +495,8 @@ app.post('/api/tours/:name/upload-photo', async (req, res) => {
         
         const photoPrompt = `Analizujesz zdjęcia przypisane do konkretnej wycieczki i tworzysz metadane w języku EN. Każde zdjęcie oceniaj w kontekście: city, tour name oraz kanonicznego opisu EN (short/long/highlights) – to pozwala rozpoznać miejsce, motyw i użyć właściwych nazw.
 
+WAŻNE: ZAWSZE zwróć metadane dla zdjęcia, nawet jeśli nie jest idealnie związane z wycieczką. Jeśli zdjęcie nie pasuje do tematu wycieczki, opisz je neutralnie używając kontekstu miasta i wycieczki.
+
 Dla każdego zdjęcia zwróć obiekt:
 - newName – docelowa nazwa pliku (kebab-case, ascii, bez znaków PL/DE/ES), format: {{city}}-{{główne_miejsce}}-{{kontekst}}-{{unikalny-sufiks}}.webp.
 - caption – 1–2 zdania, żywe i rzeczowe, naturalne dla EN; unikać klisz i wykrzykników.
@@ -496,6 +506,8 @@ Dla każdego zdjęcia zwróć obiekt:
 Zasady:
 - Nie zmieniaj nazw własnych; używaj tych z kontekstu (dzielnice, katedry, place).
 - Nie zgaduj na siłę – jeśli niepewność, opisz neutralnie („widok na…", „fragment…").
+- Jeśli zdjęcie nie pasuje do tematu wycieczki, opisz je używając kontekstu miasta i ogólnego tematu wycieczki.
+- ZAWSZE zwróć poprawny JSON array, nawet dla zdjęć które nie pasują idealnie.
 - Wyjście JSON array: [ { "id": "photoId", "newName": "...", "caption": "...", "alt": "...", "description": "..." } ] – gdzie id = Photo ID z arkusza.`;
         
         const photoResult = await ai.models.generateContent({
@@ -548,6 +560,21 @@ Zasady:
         
         // Add photoId to tour's photoIds
         await addPhotoIdToTour(name, photoId);
+        
+        // Automatically rename file in Drive if newName was generated
+        if (metadata.newName && fileId) {
+            try {
+                const ownerDrive = await getOwnerDriveClient();
+                await ownerDrive.files.update({
+                    fileId: fileId,
+                    requestBody: { name: metadata.newName },
+                });
+                console.log(`✓ Automatically renamed uploaded file ${fileId} to ${metadata.newName}`);
+            } catch (renameError) {
+                console.warn(`⚠ Could not automatically rename file ${fileId}:`, renameError.message);
+                // Don't fail the whole operation if rename fails
+            }
+        }
         
         res.status(200).json({ 
             message: 'Photo analyzed and added to tour successfully',

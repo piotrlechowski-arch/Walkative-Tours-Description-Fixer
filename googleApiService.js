@@ -687,7 +687,8 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
     
     // 3. Rename files in Drive if requested
     if (renameInDrive) {
-        const drive = getDriveClient();
+        // Use owner's OAuth token for rename (not Service Account)
+        const drive = await getOwnerDriveClient();
         const { photos: sourcePhotos } = await getTourDetails(tourName);
 
         console.log(`=== RENAMING FILES IN DRIVE ===`);
@@ -701,28 +702,11 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
             console.log(`  - driveFileId: ${sourcePhoto?.driveFileId || 'MISSING'}`);
             console.log(`  - newName: ${photoMeta.newName || 'MISSING'}`);
             
-            if (sourcePhoto && sourcePhoto.driveFileId) {
+            if (sourcePhoto && sourcePhoto.driveFileId && photoMeta.newName) {
                 try {
-                    // Get file metadata to check if it's in Shared Drive
-                    let fileDriveId = null;
-                    try {
-                        const fileMetadata = await drive.files.get({
-                            fileId: sourcePhoto.driveFileId,
-                            fields: 'driveId',
-                            supportsAllDrives: true,
-                        });
-                        if (fileMetadata.data.driveId) {
-                            fileDriveId = fileMetadata.data.driveId;
-                        }
-                    } catch (metaError) {
-                        console.warn(`Could not get file metadata for ${sourcePhoto.driveFileId}:`, metaError.message);
-                    }
-                    
                     await drive.files.update({
                         fileId: sourcePhoto.driveFileId,
                         requestBody: { name: photoMeta.newName },
-                        supportsAllDrives: true,
-                        ...(fileDriveId && { driveId: fileDriveId }),
                     });
                     console.log(`✓ Successfully renamed file ${sourcePhoto.driveFileId} to ${photoMeta.newName}`);
                 } catch (e) {
@@ -730,7 +714,11 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
                     console.error(`  Error details:`, e);
                 }
             } else {
-                console.warn(`⚠ Skipping photo ${photoMeta.id}: ${!sourcePhoto ? 'not found in sourcePhotos' : 'driveFileId missing'}`);
+                const reasons = [];
+                if (!sourcePhoto) reasons.push('not found in sourcePhotos');
+                if (!sourcePhoto?.driveFileId) reasons.push('driveFileId missing');
+                if (!photoMeta.newName) reasons.push('newName missing');
+                console.warn(`⚠ Skipping photo ${photoMeta.id}: ${reasons.join(', ')}`);
             }
         }
         console.log(`=== RENAME OPERATION COMPLETE ===`);
