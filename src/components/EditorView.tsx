@@ -93,25 +93,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
   
   const handleAcceptClick = () => {
       if (processedData) {
+          // Ensure description is present before accepting
+          if (!processedData.description) {
+            alert('Błąd: Brak opisu w danych. Najpierw wygeneruj opis wycieczki.');
+            return;
+          }
+          console.log('Accepting data:', {
+            mode,
+            hasDescription: !!processedData.description,
+            descriptionKeys: processedData.description ? Object.keys(processedData.description) : [],
+            photosCount: processedData.photos?.length || 0
+          });
           // Always copy files to "Nowe" folder when accepting changes
           onAccept(mode, processedData, true); // Always set renameInDrive=true
-      }
-  };
-  
-  const handleAcceptClickOld = () => {
-      if (processedData) {
-        // Ensure description is present before accepting
-        if (!processedData.description) {
-          alert('Błąd: Brak opisu w danych. Najpierw wygeneruj opis wycieczki.');
-          return;
-        }
-        console.log('Accepting data:', {
-          mode,
-          hasDescription: !!processedData.description,
-          descriptionKeys: processedData.description ? Object.keys(processedData.description) : [],
-          photosCount: processedData.photos?.length || 0
-        });
-        onAccept(mode, processedData, renameInDrive);
       } else {
         alert('Brak danych do zapisania. Najpierw wygeneruj treść.');
       }
