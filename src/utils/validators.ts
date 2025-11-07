@@ -25,15 +25,43 @@ export const validateShort = (text: string, rules: ValidationRules): ValidationR
 };
 
 export const validateLong = (text: string, rules: ValidationRules): ValidationResult => {
-    const paraCount = countParagraphs(text);
-    if (paraCount !== rules.longParagraphs) {
-        return { isValid: false, message: `Nieprawidłowa liczba akapitów (${paraCount}). Wymagane: ${rules.longParagraphs}.` };
-    }
     const charCount = text.length;
     if (charCount < rules.longCharMin || charCount > rules.longCharMax) {
         return { isValid: false, message: `Nieprawidłowa liczba znaków (${charCount}). Wymagane: ${rules.longCharMin}-${rules.longCharMax}.` };
     }
-    return { isValid: true, message: `OK (${paraCount} akapitów, ${charCount} znaków)` };
+    return { isValid: true, message: `OK (${charCount} znaków)` };
+};
+
+export const validateNewName = (text: string, rules: ValidationRules): ValidationResult => {
+    const charCount = text.length;
+    if (charCount < rules.newNameCharMin || charCount > rules.newNameCharMax) {
+        return { isValid: false, message: `Nieprawidłowa długość (${charCount} znaków). Wymagane: ${rules.newNameCharMin}-${rules.newNameCharMax}.` };
+    }
+    return { isValid: true, message: `OK (${charCount} znaków)` };
+};
+
+export const validateTitle = (text: string, rules: ValidationRules): ValidationResult => {
+    const charCount = text.length;
+    if (charCount < rules.titleCharMin || charCount > rules.titleCharMax) {
+        return { isValid: false, message: `Nieprawidłowa długość (${charCount} znaków). Wymagane: ${rules.titleCharMin}-${rules.titleCharMax}.` };
+    }
+    return { isValid: true, message: `OK (${charCount} znaków)` };
+};
+
+export const validateH1 = (text: string, rules: ValidationRules): ValidationResult => {
+    const charCount = text.length;
+    if (charCount < rules.h1CharMin || charCount > rules.h1CharMax) {
+        return { isValid: false, message: `Nieprawidłowa długość (${charCount} znaków). Wymagane: ${rules.h1CharMin}-${rules.h1CharMax}.` };
+    }
+    return { isValid: true, message: `OK (${charCount} znaków)` };
+};
+
+export const validateMeta = (text: string, rules: ValidationRules): ValidationResult => {
+    const charCount = text.length;
+    if (charCount < rules.metaCharMin || charCount > rules.metaCharMax) {
+        return { isValid: false, message: `Nieprawidłowa długość (${charCount} znaków). Wymagane: ${rules.metaCharMin}-${rules.metaCharMax}.` };
+    }
+    return { isValid: true, message: `OK (${charCount} znaków)` };
 };
 
 export const validateHighlights = (text: string, rules: ValidationRules): ValidationResult => {
@@ -64,6 +92,18 @@ export const validateAll = (
     rules: ValidationRules
 ): { [key: string]: ValidationResult } => {
     const results: { [key: string]: ValidationResult } = {};
+    if (data.description.newName) {
+        results.newName = validateNewName(data.description.newName, rules);
+    }
+    if (data.description.title) {
+        results.title = validateTitle(data.description.title, rules);
+    }
+    if (data.description.h1) {
+        results.h1 = validateH1(data.description.h1, rules);
+    }
+    if (data.description.meta) {
+        results.meta = validateMeta(data.description.meta, rules);
+    }
     results.short = validateShort(data.description.short, rules);
     results.long = validateLong(data.description.long, rules);
     results.highlights = validateHighlights(data.description.highlights, rules);

@@ -48,6 +48,25 @@ export const apiService = {
     });
     return handleResponse(response);
   },
+
+  createTour: async (tourData: {
+    city: string;
+    name: string;
+    short?: string;
+    long?: string;
+    highlightsTitle?: string;
+    highlightsDescription?: string;
+    photoIds?: string[];
+  }): Promise<void> => {
+    const response = await fetch('/api/tours', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(tourData),
+    });
+    return handleResponse(response);
+  },
   
   // Keep Gemini API calls going through the backend
   generate: async (body: object): Promise<any> => {
@@ -57,6 +76,39 @@ export const apiService = {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+    });
+    return handleResponse(response);
+  },
+
+  uploadPhoto: async (file: File, city: string, country: string = ''): Promise<{
+    photoId: string;
+    url: string;
+    driveFileId: string;
+  }> => {
+    const formData = new FormData();
+    formData.append('photo', file);
+    formData.append('city', city);
+    formData.append('country', country);
+
+    const response = await fetch('/api/upload-photo', {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(response);
+  },
+
+  uploadAndAnalyzePhoto: async (
+    tourName: string,
+    photoId: string,
+    photoUrl: string,
+    city: string
+  ): Promise<void> => {
+    const response = await fetch(`/api/tours/${encodeURIComponent(tourName)}/upload-photo`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ photoId, photoUrl, city }),
     });
     return handleResponse(response);
   },

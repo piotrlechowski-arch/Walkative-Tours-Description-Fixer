@@ -129,9 +129,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
 
       <SettingsSection title="Limity i reguły walidacji">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+          <NumberInput label="New Name: min znaków" value={localSettings.rules.newNameCharMin} onChange={v => handleRuleChange('newNameCharMin', v)} />
+          <NumberInput label="New Name: max znaków" value={localSettings.rules.newNameCharMax} onChange={v => handleRuleChange('newNameCharMax', v)} />
+          <NumberInput label="Title: min znaków" value={localSettings.rules.titleCharMin} onChange={v => handleRuleChange('titleCharMin', v)} />
+          <NumberInput label="Title: max znaków" value={localSettings.rules.titleCharMax} onChange={v => handleRuleChange('titleCharMax', v)} />
+          <NumberInput label="H1: min znaków" value={localSettings.rules.h1CharMin} onChange={v => handleRuleChange('h1CharMin', v)} />
+          <NumberInput label="H1: max znaków" value={localSettings.rules.h1CharMax} onChange={v => handleRuleChange('h1CharMax', v)} />
+          <NumberInput label="Meta: min znaków" value={localSettings.rules.metaCharMin} onChange={v => handleRuleChange('metaCharMin', v)} />
+          <NumberInput label="Meta: max znaków" value={localSettings.rules.metaCharMax} onChange={v => handleRuleChange('metaCharMax', v)} />
           <NumberInput label="Short: min znaków" value={localSettings.rules.shortCharMin} onChange={v => handleRuleChange('shortCharMin', v)} />
           <NumberInput label="Short: max znaków" value={localSettings.rules.shortCharMax} onChange={v => handleRuleChange('shortCharMax', v)} />
-          <NumberInput label="Long: liczba akapitów" value={localSettings.rules.longParagraphs} onChange={v => handleRuleChange('longParagraphs', v)} />
           <NumberInput label="Long: min znaków" value={localSettings.rules.longCharMin} onChange={v => handleRuleChange('longCharMin', v)} />
           <NumberInput label="Long: max znaków" value={localSettings.rules.longCharMax} onChange={v => handleRuleChange('longCharMax', v)} />
           <NumberInput label="Highlights: min pozycji" value={localSettings.rules.highlightsMin} onChange={v => handleRuleChange('highlightsMin', v)} />
@@ -147,6 +154,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
          <TextAreaInput label="Lokalizacja PL" value={localSettings.prompts.localizePL} onChange={v => handlePromptChange('localizePL', v)} />
          <TextAreaInput label="Lokalizacja DE" value={localSettings.prompts.localizeDE} onChange={v => handlePromptChange('localizeDE', v)} />
          <TextAreaInput label="Lokalizacja ES" value={localSettings.prompts.localizeES} onChange={v => handlePromptChange('localizeES', v)} />
+         <TextAreaInput label="New Name/Title/H1 - EN" value={localSettings.prompts.newNameTitleH1EN} onChange={v => handlePromptChange('newNameTitleH1EN', v)} />
+         <TextAreaInput label="New Name/Title/H1 - PL" value={localSettings.prompts.newNameTitleH1PL} onChange={v => handlePromptChange('newNameTitleH1PL', v)} />
+         <TextAreaInput label="New Name/Title/H1 - DE" value={localSettings.prompts.newNameTitleH1DE} onChange={v => handlePromptChange('newNameTitleH1DE', v)} />
+         <TextAreaInput label="New Name/Title/H1 - ES" value={localSettings.prompts.newNameTitleH1ES} onChange={v => handlePromptChange('newNameTitleH1ES', v)} />
+         <TextAreaInput label="Meta Description - EN" value={localSettings.prompts.metaEN} onChange={v => handlePromptChange('metaEN', v)} />
+         <TextAreaInput label="Meta Description - PL" value={localSettings.prompts.metaPL} onChange={v => handlePromptChange('metaPL', v)} />
+         <TextAreaInput label="Meta Description - DE" value={localSettings.prompts.metaDE} onChange={v => handlePromptChange('metaDE', v)} />
+         <TextAreaInput label="Meta Description - ES" value={localSettings.prompts.metaES} onChange={v => handlePromptChange('metaES', v)} />
          <TextAreaInput label="Analiza Zdjęć (baza)" value={localSettings.prompts.photoBase} onChange={v => handlePromptChange('photoBase', v)} />
          <TextAreaInput label="Kontrola Jakości (QC) - EN" value={localSettings.prompts.qcEN} onChange={v => handlePromptChange('qcEN', v)} />
          <TextAreaInput label="Kontrola Jakości (QC) - PL" value={localSettings.prompts.qcPL} onChange={v => handlePromptChange('qcPL', v)} />

@@ -122,7 +122,7 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
   const isDataReady = processedData !== null;
   const [assistantLoading, setAssistantLoading] = useState<string | null>(null);
   
-  const handleDescriptionChange = (field: 'short' | 'long' | 'highlights', value: string) => {
+  const handleDescriptionChange = (field: 'newName' | 'title' | 'h1' | 'meta' | 'short' | 'long' | 'highlights', value: string) => {
     if (!processedData) return;
     setProcessedData({
       ...processedData,
@@ -141,7 +141,7 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
      });
   };
 
-  const handleAssistantAction = async (field: 'short' | 'long' | 'highlights', instruction: string) => {
+  const handleAssistantAction = async (field: 'newName' | 'title' | 'h1' | 'meta' | 'short' | 'long' | 'highlights', instruction: string) => {
       if (!processedData) return;
       setAssistantLoading(field);
       try {
@@ -174,6 +174,52 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
 
         {isDataReady && (
           <div>
+            {/* SEO Fields */}
+            <div className="mb-4 relative">
+              <label className="block text-sm font-medium">New Name</label>
+              <input
+                type="text"
+                value={processedData.description.newName || ''}
+                onChange={(e) => handleDescriptionChange('newName', e.target.value)}
+                className="mt-1 block w-full rounded-md bg-gray-100 dark:bg-gray-700 border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600 focus:ring-0"
+              />
+              <ValidationIndicator result={validationResults.newName} />
+              <TextAssistant isLoading={assistantLoading === 'newName'} onInstruction={(inst) => handleAssistantAction('newName', inst)} />
+            </div>
+            <div className="mb-4 relative">
+              <label className="block text-sm font-medium">Title</label>
+              <input
+                type="text"
+                value={processedData.description.title || ''}
+                onChange={(e) => handleDescriptionChange('title', e.target.value)}
+                className="mt-1 block w-full rounded-md bg-gray-100 dark:bg-gray-700 border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600 focus:ring-0"
+              />
+              <ValidationIndicator result={validationResults.title} />
+              <TextAssistant isLoading={assistantLoading === 'title'} onInstruction={(inst) => handleAssistantAction('title', inst)} />
+            </div>
+            <div className="mb-4 relative">
+              <label className="block text-sm font-medium">H1</label>
+              <input
+                type="text"
+                value={processedData.description.h1 || ''}
+                onChange={(e) => handleDescriptionChange('h1', e.target.value)}
+                className="mt-1 block w-full rounded-md bg-gray-100 dark:bg-gray-700 border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600 focus:ring-0"
+              />
+              <ValidationIndicator result={validationResults.h1} />
+              <TextAssistant isLoading={assistantLoading === 'h1'} onInstruction={(inst) => handleAssistantAction('h1', inst)} />
+            </div>
+            <div className="mb-4 relative">
+              <label className="block text-sm font-medium">Meta Description</label>
+              <textarea
+                value={processedData.description.meta || ''}
+                onChange={(e) => handleDescriptionChange('meta', e.target.value)}
+                rows={2}
+                className="mt-1 block w-full rounded-md bg-gray-100 dark:bg-gray-700 border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600 focus:ring-0"
+              />
+              <ValidationIndicator result={validationResults.meta} />
+              <TextAssistant isLoading={assistantLoading === 'meta'} onInstruction={(inst) => handleAssistantAction('meta', inst)} />
+            </div>
+            
             {/* Description Fields */}
             <div className="mb-4 relative">
               <label className="block text-sm font-medium">Short Description</label>

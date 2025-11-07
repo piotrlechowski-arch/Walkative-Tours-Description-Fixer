@@ -1,8 +1,12 @@
 export type Language = 'PL' | 'DE' | 'ES';
-export type View = 'editor' | 'settings';
+export type View = 'editor' | 'settings' | 'addTour';
 export type Mode = 'EN' | Language | 'CANONICAL_EN';
 
 export interface TourDescription {
+  newName: string;
+  title: string;
+  h1: string;
+  meta: string;
   short: string;
   long: string;
   highlights: string;
@@ -11,6 +15,9 @@ export interface TourDescription {
 export interface Tour {
   city: string;
   name: string;
+  title?: string;
+  h1?: string;
+  meta?: string;
   short: string;
   long: string;
   highlightsTitle: string;
@@ -63,10 +70,16 @@ export interface ValidationResult {
 }
 
 export interface ValidationRules {
+    newNameCharMin: number;
+    newNameCharMax: number;
+    titleCharMin: number;
+    titleCharMax: number;
+    h1CharMin: number;
+    h1CharMax: number;
+    metaCharMin: number;
+    metaCharMax: number;
     shortCharMin: number;
     shortCharMax: number;
-    longParagraphs: number;
-
     longCharMin: number;
     longCharMax: number;
     highlightsMin: number;
@@ -84,6 +97,14 @@ export interface AppSettings {
     localizePL: string;
     localizeDE: string;
     localizeES: string;
+    newNameTitleH1EN: string;
+    newNameTitleH1PL: string;
+    newNameTitleH1DE: string;
+    newNameTitleH1ES: string;
+    metaEN: string;
+    metaPL: string;
+    metaDE: string;
+    metaES: string;
     photoBase: string;
     photoTranslate: string;
     qcEN: string;

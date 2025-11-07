@@ -18,11 +18,19 @@ async function runQuickFix(text: string, qcSystemPrompt: string): Promise<string
 }
 
 function parseDescriptionResponse(text: string): TourDescription {
+  const newNameMatch = text.match(/<newName>([\s\S]*?)<\/newName>/);
+  const titleMatch = text.match(/<title>([\s\S]*?)<\/title>/);
+  const h1Match = text.match(/<h1>([\s\S]*?)<\/h1>/);
+  const metaMatch = text.match(/<meta>([\s\S]*?)<\/meta>/);
   const shortMatch = text.match(/<short>([\s\S]*?)<\/short>/);
   const longMatch = text.match(/<long>([\s\S]*?)<\/long>/);
   const highlightsMatch = text.match(/<highlights>([\s\S]*?)<\/highlights>/);
 
   return {
+    newName: newNameMatch ? newNameMatch[1].trim() : '',
+    title: titleMatch ? titleMatch[1].trim() : '',
+    h1: h1Match ? h1Match[1].trim() : '',
+    meta: metaMatch ? metaMatch[1].trim() : '',
     short: shortMatch ? shortMatch[1].trim() : `Error: could not parse short description from:\n${text}`,
     long: longMatch ? longMatch[1].trim() : `Error: could not parse long description from:\n${text}`,
     highlights: highlightsMatch ? highlightsMatch[1].trim() : `Error: could not parse highlights from:\n${text}`,
@@ -118,6 +126,10 @@ Description: ${tour.highlightsDescription}
 </highlights>
     `;
     
+    console.log('=== GENERATING DESCRIPTION ===');
+    console.log('Using prompt (normalizeEN):', settings.prompts.normalizeEN.substring(0, 100) + '...');
+    console.log('Using model:', settings.models.text);
+    
     const descriptionResult = await apiService.generate({
         model: settings.models.text,
         contents: descriptionUserInput,
@@ -127,7 +139,49 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, settings.prompts.qcEN);
     const description = parseDescriptionResponse(fixedDescriptionText);
     
-    return description;
+    // Generate SEO fields (New Name, Title, H1)
+    const seoUserInput = `
+      <city>${tour.city}</city>
+      <name>${tour.name}</name>
+      <short>${description.short}</short>
+      <long>${description.long}</long>
+      <highlights>${description.highlights}</highlights>
+    `;
+    
+    console.log('Using prompt (newNameTitleH1EN):', settings.prompts.newNameTitleH1EN.substring(0, 100) + '...');
+    const seoResult = await apiService.generate({
+        model: settings.models.text,
+        contents: seoUserInput,
+        config: { systemInstruction: settings.prompts.newNameTitleH1EN }
+    });
+    
+    const seoFields = parseDescriptionResponse(seoResult.text);
+    
+    // Generate Meta description
+    const metaUserInput = `
+      <city>${tour.city}</city>
+      <name>${tour.name}</name>
+      <short>${description.short}</short>
+      <long>${description.long}</long>
+      <highlights>${description.highlights}</highlights>
+    `;
+    
+    console.log('Using prompt (metaEN):', settings.prompts.metaEN.substring(0, 100) + '...');
+    const metaResult = await apiService.generate({
+        model: settings.models.text,
+        contents: metaUserInput,
+        config: { systemInstruction: settings.prompts.metaEN }
+    });
+    
+    const metaFields = parseDescriptionResponse(metaResult.text);
+    
+    return {
+      ...description,
+      newName: seoFields.newName || '',
+      title: seoFields.title || '',
+      h1: seoFields.h1 || '',
+      meta: metaFields.meta || '',
+    };
   },
 
   // NEW: Generate only photo metadata for EN (requires description)
@@ -161,10 +215,14 @@ Description: ${tour.highlightsDescription}
       
       const allParts = [{ text: photoPromptText }, ...photoParts];
 
+      const photoPrompt = settings.prompts.photoBase.replace('{{LANG}}', 'EN');
+      console.log('Using prompt (photoBase for EN):', photoPrompt.substring(0, 100) + '...');
+      console.log('Using model (image):', settings.models.image);
+      
       const photoResult = await apiService.generate({
           model: settings.models.image,
           contents: { parts: allParts },
-          config: { systemInstruction: settings.prompts.photoBase.replace('{{LANG}}', 'EN') }
+          config: { systemInstruction: photoPrompt }
       });
       
       const batchMetadata = parsePhotoMetadataResponse(photoResult.text);
@@ -215,7 +273,53 @@ Description: ${tour.highlightsDescription}
     const fixedDescriptionText = await runQuickFix(descriptionResult.text, qcSystemPrompt);
     const description = parseDescriptionResponse(fixedDescriptionText);
     
-    return description;
+    // Generate SEO fields (New Name, Title, H1) for localized version
+    const seoUserInput = `
+      <city>${tour.city}</city>
+      <name>${tour.name}</name>
+      <en_newName>${enTour.newName}</en_newName>
+      <en_title>${enTour.title}</en_title>
+      <en_h1>${enTour.h1}</en_h1>
+      <short>${description.short}</short>
+      <long>${description.long}</long>
+      <highlights>${description.highlights}</highlights>
+    `;
+    
+    const seoPrompt = settings.prompts[`newNameTitleH1${lang}` as keyof AppSettings['prompts']];
+    const seoResult = await apiService.generate({
+        model: settings.models.text,
+        contents: seoUserInput,
+        config: { systemInstruction: seoPrompt }
+    });
+    
+    const seoFields = parseDescriptionResponse(seoResult.text);
+    
+    // Generate Meta description for localized version
+    const metaUserInput = `
+      <city>${tour.city}</city>
+      <name>${tour.name}</name>
+      <en_meta>${enTour.meta}</en_meta>
+      <short>${description.short}</short>
+      <long>${description.long}</long>
+      <highlights>${description.highlights}</highlights>
+    `;
+    
+    const metaPrompt = settings.prompts[`meta${lang}` as keyof AppSettings['prompts']];
+    const metaResult = await apiService.generate({
+        model: settings.models.text,
+        contents: metaUserInput,
+        config: { systemInstruction: metaPrompt }
+    });
+    
+    const metaFields = parseDescriptionResponse(metaResult.text);
+    
+    return {
+      ...description,
+      newName: seoFields.newName || '',
+      title: seoFields.title || '',
+      h1: seoFields.h1 || '',
+      meta: metaFields.meta || '',
+    };
   },
 
   // NEW: Translate photo metadata from EN to target language (does NOT analyze images)

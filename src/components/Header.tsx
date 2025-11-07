@@ -36,6 +36,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView }) => {
           </div>
           <nav className="flex space-x-2">
             <NavButton viewName="editor">Edytor</NavButton>
+            <NavButton viewName="addTour">Dodaj nową wycieczkę</NavButton>
             <NavButton viewName="settings">Ustawienia</NavButton>
           </nav>
         </div>

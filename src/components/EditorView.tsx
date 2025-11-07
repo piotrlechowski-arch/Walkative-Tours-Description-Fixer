@@ -18,6 +18,7 @@ interface EditorViewProps {
   onAccept: (mode: Mode, data: ProcessedTourData, renameInDrive: boolean) => void;
   onLoadCanonicalEn: () => Promise<void>;
   onLoadLocalizedData: (lang: Language) => Promise<void>;
+  onPhotoUploaded?: () => void;
   isLoading: boolean;
   settings: AppSettings;
 }
@@ -35,6 +36,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onAccept,
   onLoadCanonicalEn,
   onLoadLocalizedData,
+  onPhotoUploaded,
   isLoading,
   settings
 }) => {
@@ -169,7 +171,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     if (mode === 'EN') {
       return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SourceColumn tour={sourceTour} photos={sourcePhotos} mode="EN" canonicalEnData={null} />
+          <SourceColumn tour={sourceTour} photos={sourcePhotos} mode="EN" canonicalEnData={null} onPhotoUploaded={onPhotoUploaded} />
           <GeneratedColumn
             processedData={processedData}
             sourcePhotos={sourcePhotos}
@@ -194,7 +196,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       if (isEditingCanonical) {
         return (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SourceColumn tour={sourceTour} photos={sourcePhotos} mode="EN" canonicalEnData={null} />
+            <SourceColumn tour={sourceTour} photos={sourcePhotos} mode="EN" canonicalEnData={null} onPhotoUploaded={onPhotoUploaded} />
             <GeneratedColumn
               processedData={processedData}
               sourcePhotos={sourcePhotos}

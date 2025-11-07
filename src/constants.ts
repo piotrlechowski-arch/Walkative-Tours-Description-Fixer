@@ -97,6 +97,122 @@ Zasady:
 - Styl: naturalny dla {{LANG}}, bez kalek językowych.
 - Wyjście JSON array: [ { "id": "photoId", "newName": "...", "caption": "...", "alt": "...", "description": "..." }, … ] – gdzie id = Photo ID z arkusza.`;
 
+export const PROMPT_NEW_NAME_TITLE_H1_EN = `Generate SEO-optimized tour name elements in English based on the original tour name and description.
+
+You need to create three related but distinct elements:
+1. **New Name** - An improved, SEO-friendly version of the tour name (displayed in breadcrumbs, e.g., "Welcome to Berlin! Historic Centre Guided Walking Tour")
+2. **Title** - The browser tab/page title (optimized for SEO, typically 50-60 characters)
+3. **H1** - The main heading on the page (an expanded, descriptive version of the tour name, e.g., "Berlin Historic Centre Walking Tour: Prussian, Nazi & Cold War Eras")
+
+Rules:
+- New Name should be clear, descriptive, and include the city/tour type
+- Title should be concise, keyword-rich, and fit within 50-60 characters
+- H1 should be more descriptive and engaging than New Name, optimized for both SEO and user experience
+- All three should be related but serve different purposes
+- Use proper nouns correctly (city names, landmarks)
+- Style: "smart fun", engaging, SEO-optimized
+
+Return exactly: <newName>...</newName><title>...</title><h1>...</h1> – with no commentary.`;
+
+export const PROMPT_NEW_NAME_TITLE_H1_PL = `Wygeneruj zoptymalizowane elementy nazwy wycieczki w języku polskim na podstawie oryginalnej nazwy i opisu wycieczki.
+
+Musisz utworzyć trzy powiązane, ale odrębne elementy:
+1. **New Name** - Poprawiona, zoptymalizowana wersja nazwy wycieczki (wyświetlana w breadcrumbs, np. "Witaj w Berlinie! Spacer po Starym Mieście")
+2. **Title** - Tytuł strony/zakładki w przeglądarce (zoptymalizowany dla SEO, zazwyczaj 50-60 znaków)
+3. **H1** - Główny nagłówek na stronie (rozwinięta, opisowa wersja nazwy wycieczki)
+
+Reguły:
+- New Name powinien być jasny, opisowy i zawierać miasto/typ wycieczki
+- Title powinien być zwięzły, bogaty w słowa kluczowe i mieścić się w 50-60 znakach
+- H1 powinien być bardziej opisowy i angażujący niż New Name, zoptymalizowany zarówno pod SEO jak i doświadczenie użytkownika
+- Wszystkie trzy powinny być powiązane, ale służyć różnym celom
+- Używaj poprawnie nazw własnych (nazwy miast, zabytki)
+- Styl: "smart fun", angażujący, zoptymalizowany dla SEO
+
+Wyjście zwróć w tagach: <newName>...</newName><title>...</title><h1>...</h1> – bez komentarzy.`;
+
+export const PROMPT_NEW_NAME_TITLE_H1_DE = `Generiere SEO-optimierte Tournamen-Elemente auf Deutsch basierend auf dem ursprünglichen Tournamen und der Beschreibung.
+
+Du musst drei verwandte, aber unterschiedliche Elemente erstellen:
+1. **New Name** - Eine verbesserte, SEO-freundliche Version des Tournamens (angezeigt in Breadcrumbs, z.B. "Willkommen in Berlin! Historisches Zentrum geführter Rundgang")
+2. **Title** - Der Browser-Tab/Seitentitel (SEO-optimiert, typischerweise 50-60 Zeichen)
+3. **H1** - Die Hauptüberschrift auf der Seite (eine erweiterte, beschreibende Version des Tournamens)
+
+Regeln:
+- New Name sollte klar, beschreibend sein und Stadt/Tourtyp enthalten
+- Title sollte prägnant, schlüsselwortreich sein und in 50-60 Zeichen passen
+- H1 sollte beschreibender und ansprechender sein als New Name, optimiert für SEO und Benutzererfahrung
+- Alle drei sollten verwandt sein, aber unterschiedlichen Zwecken dienen
+- Verwende Eigennamen korrekt (Städtenamen, Sehenswürdigkeiten)
+- Stil: "smart fun", ansprechend, SEO-optimiert
+
+Gib die Ausgabe genau zurück: <newName>...</newName><title>...</title><h1>...</h1> – ohne Kommentare.`;
+
+export const PROMPT_NEW_NAME_TITLE_H1_ES = `Genera elementos optimizados para SEO del nombre del tour en español basado en el nombre original y la descripción del tour.
+
+Debes crear tres elementos relacionados pero distintos:
+1. **New Name** - Una versión mejorada y optimizada para SEO del nombre del tour (mostrado en breadcrumbs, ej. "¡Bienvenido a Berlín! Tour Guiado del Centro Histórico")
+2. **Title** - El título de la pestaña/página del navegador (optimizado para SEO, típicamente 50-60 caracteres)
+3. **H1** - El encabezado principal en la página (una versión expandida y descriptiva del nombre del tour)
+
+Reglas:
+- New Name debe ser claro, descriptivo e incluir ciudad/tipo de tour
+- Title debe ser conciso, rico en palabras clave y caber en 50-60 caracteres
+- H1 debe ser más descriptivo y atractivo que New Name, optimizado tanto para SEO como para la experiencia del usuario
+- Los tres deben estar relacionados pero servir a diferentes propósitos
+- Usa nombres propios correctamente (nombres de ciudades, monumentos)
+- Estilo: "smart fun", atractivo, optimizado para SEO
+
+Devuelve exactamente: <newName>...</newName><title>...</title><h1>...</h1> – sin comentarios.`;
+
+export const PROMPT_META_EN = `Generate a meta description for the tour in English. The meta description should be a concise summary (typically 150-160 characters) that appears in search engine results.
+
+Rules:
+- Length: 150-160 characters (optimal for SEO)
+- Include key information: city, tour type, main highlights
+- Make it compelling and encourage clicks
+- Use natural language, avoid keyword stuffing
+- Include a call to action if space allows
+- Style: "smart fun", engaging
+
+Return exactly: <meta>...</meta> – with no commentary.`;
+
+export const PROMPT_META_PL = `Wygeneruj meta description dla wycieczki w języku polskim. Meta description powinien być zwięzłym podsumowaniem (zazwyczaj 150-160 znaków), które pojawia się w wynikach wyszukiwania.
+
+Reguły:
+- Długość: 150-160 znaków (optymalne dla SEO)
+- Zawrzyj kluczowe informacje: miasto, typ wycieczki, główne atrakcje
+- Uczyń go angażującym i zachęcającym do kliknięcia
+- Używaj naturalnego języka, unikaj keyword stuffing
+- Zawrzyj wezwanie do działania, jeśli pozwala na to miejsce
+- Styl: "smart fun", angażujący
+
+Wyjście zwróć w tagach: <meta>...</meta> – bez komentarzy.`;
+
+export const PROMPT_META_DE = `Generiere eine Meta-Beschreibung für die Tour auf Deutsch. Die Meta-Beschreibung sollte eine prägnante Zusammenfassung sein (typischerweise 150-160 Zeichen), die in Suchergebnissen angezeigt wird.
+
+Regeln:
+- Länge: 150-160 Zeichen (optimal für SEO)
+- Enthalte Schlüsselinformationen: Stadt, Tourtyp, Hauptattraktionen
+- Mache es ansprechend und ermutige zum Klicken
+- Verwende natürliche Sprache, vermeide Keyword-Stuffing
+- Füge eine Handlungsaufforderung ein, wenn der Platz es erlaubt
+- Stil: "smart fun", ansprechend
+
+Gib die Ausgabe genau zurück: <meta>...</meta> – ohne Kommentare.`;
+
+export const PROMPT_META_ES = `Genera una meta descripción para el tour en español. La meta descripción debe ser un resumen conciso (típicamente 150-160 caracteres) que aparece en los resultados de búsqueda.
+
+Reglas:
+- Longitud: 150-160 caracteres (óptimo para SEO)
+- Incluye información clave: ciudad, tipo de tour, principales atracciones
+- Hazlo atractivo y anima a hacer clic
+- Usa lenguaje natural, evita el keyword stuffing
+- Incluye una llamada a la acción si el espacio lo permite
+- Estilo: "smart fun", atractivo
+
+Devuelve exactamente: <meta>...</meta> – sin comentarios.`;
+
 
 export const DEFAULT_SETTINGS: AppSettings = {
   brandBook: `
@@ -107,9 +223,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
     - **Tone**: Conversational, friendly, approachable, but always professional.
   `,
   rules: {
+    newNameCharMin: 30,
+    newNameCharMax: 100,
+    titleCharMin: 40,
+    titleCharMax: 60,
+    h1CharMin: 50,
+    h1CharMax: 120,
+    metaCharMin: 150,
+    metaCharMax: 160,
     shortCharMin: 300,
     shortCharMax: 450,
-    longParagraphs: 6,
     longCharMin: 1500,
     longCharMax: 2100,
     highlightsMin: 6,
@@ -123,6 +246,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     localizePL: PROMPT_LOCALIZE_PL,
     localizeDE: PROMPT_LOCALIZE_DE,
     localizeES: PROMPT_LOCALIZE_ES,
+    newNameTitleH1EN: PROMPT_NEW_NAME_TITLE_H1_EN,
+    newNameTitleH1PL: PROMPT_NEW_NAME_TITLE_H1_PL,
+    newNameTitleH1DE: PROMPT_NEW_NAME_TITLE_H1_DE,
+    newNameTitleH1ES: PROMPT_NEW_NAME_TITLE_H1_ES,
+    metaEN: PROMPT_META_EN,
+    metaPL: PROMPT_META_PL,
+    metaDE: PROMPT_META_DE,
+    metaES: PROMPT_META_ES,
     photoBase: PROMPT_PHOTO_BASE,
     photoTranslate: PROMPT_PHOTO_TRANSLATE,
     qcEN: PROMPT_QC_EN,

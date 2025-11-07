@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { TourSelector } from './components/TourSelector';
 import { EditorView } from './components/EditorView';
 import { SettingsView } from './components/SettingsView';
+import { AddTourView } from './components/AddTourView';
 import { LoadingSpinner } from './components/LoadingSpinner';
 
 const App: React.FC = () => {
@@ -135,12 +136,44 @@ const App: React.FC = () => {
     }
   }, [sourceTour, sourcePhotos, settings, canonicalEnData]);
 
+  const handlePhotoUploaded = useCallback(async () => {
+    if (!selectedTourName) return;
+    setIsLoading(true);
+    try {
+      const { tour, photos } = await apiService.getTourDetails(selectedTourName);
+      setSourceTour(tour);
+      setSourcePhotos(photos);
+    } catch (err) {
+      setError('Nie udało się odświeżyć listy zdjęć.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedTourName]);
+
   const handleAccept = useCallback(async (mode: Language | 'EN', data: ProcessedTourData, renameInDrive: boolean) => {
     if (!sourceTour) return;
     setIsLoading(true);
     setError(null);
     try {
       await apiService.acceptChanges(sourceTour.name, mode, data, renameInDrive);
+      setTours(prevTours => prevTours.map(tourEntry => {
+        if (tourEntry.name !== sourceTour.name) {
+          return tourEntry;
+        }
+
+        const descKey = `${mode.toLowerCase()}Desc` as keyof typeof tourEntry.statuses;
+        const photosKey = `photos${mode.charAt(0)}${mode.slice(1).toLowerCase()}` as keyof typeof tourEntry.statuses;
+
+        return {
+          ...tourEntry,
+          statuses: {
+            ...tourEntry.statuses,
+            [descKey]: true,
+            [photosKey]: true,
+          },
+        };
+      }));
       if (mode === 'EN') {
         setCanonicalEnData(data);
       } else {
@@ -187,6 +220,7 @@ const App: React.FC = () => {
                 onAccept={handleAccept}
                 onLoadCanonicalEn={handleLoadCanonicalEn}
                 onLoadLocalizedData={handleLoadLocalizedData}
+                onPhotoUploaded={handlePhotoUploaded}
                 isLoading={isLoading}
                 settings={settings}
               />
@@ -194,6 +228,7 @@ const App: React.FC = () => {
           </>
         )}
         {view === 'settings' && <SettingsView settings={settings} setSettings={setSettings} />}
+        {view === 'addTour' && <AddTourView onTourAdded={fetchTourList} />}
       </main>
     </div>
   );
