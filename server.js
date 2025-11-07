@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
 import { getTours, getTourDetails, getCanonicalEnData, getLocalizedData, acceptChanges, createTour, uploadPhotoToDrive, addPhotoToSource, generatePhotoId, addPhotoIdToTour } from './googleApiService.js';
 import { google } from 'googleapis';
-import { JWT } from 'google-auth-library';
+import { JWT, OAuth2Client } from 'google-auth-library';
 import multer from 'multer';
 import sharp from 'sharp';
 
@@ -39,6 +39,43 @@ process.on('uncaughtException', (err) => {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// OAuth 2.0 configuration for Google Drive uploads
+const getOAuth2Client = () => {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || 
+    `${process.env.PUBLIC_URL || 'https://walkative-tours-fixer-v2-427383392801.us-west1.run.app'}/api/auth/google/callback`;
+  
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+  
+  return new OAuth2Client(clientId, clientSecret, redirectUri);
+};
+
+// Get owner's access token (refresh if needed)
+const getOwnerAccessToken = async () => {
+  const refreshToken = process.env.GOOGLE_DRIVE_OWNER_REFRESH_TOKEN;
+  if (!refreshToken) {
+    throw new Error('Google Drive owner authorization required. Please authorize the app in Settings.');
+  }
+  
+  const oauth2Client = getOAuth2Client();
+  if (!oauth2Client) {
+    throw new Error('OAuth 2.0 client not configured. Please set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.');
+  }
+  
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  
+  try {
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    return credentials.access_token;
+  } catch (error) {
+    console.error('Error refreshing access token:', error);
+    throw new Error('Failed to refresh access token. Please re-authorize the app in Settings.');
+  }
+};
 
 // Helper to get Google Drive client (with write access for uploads)
 const getDriveClient = () => {
@@ -167,6 +204,94 @@ app.post('/api/generate', async (req, res) => {
     console.error('Error calling Gemini API:', error);
     const errorMessage = error.message || String(error);
     res.status(500).json({ error: errorMessage });
+  }
+});
+
+// OAuth 2.0 endpoints for Google Drive authorization
+app.get('/api/auth/google', async (req, res) => {
+  try {
+    const oauth2Client = getOAuth2Client();
+    if (!oauth2Client) {
+      return res.status(500).json({ error: 'OAuth 2.0 client not configured' });
+    }
+    
+    const scopes = ['https://www.googleapis.com/auth/drive.file'];
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: scopes,
+      prompt: 'consent', // Force consent screen to get refresh token
+    });
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    console.error('Error initiating OAuth flow:', error);
+    res.status(500).json({ error: 'Failed to initiate OAuth flow' });
+  }
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ error: 'Authorization code not provided' });
+    }
+    
+    const oauth2Client = getOAuth2Client();
+    if (!oauth2Client) {
+      return res.status(500).json({ error: 'OAuth 2.0 client not configured' });
+    }
+    
+    const { tokens } = await oauth2Client.getToken(code as string);
+    
+    if (!tokens.refresh_token) {
+      return res.status(400).json({ error: 'Refresh token not received. Please try again.' });
+    }
+    
+    // Store refresh token - in production, this should be saved to Cloud Run secret
+    // For now, we'll return it so it can be manually added to Cloud Run secret
+    res.send(`
+      <html>
+        <head><title>Authorization Successful</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+          <h1 style="color: green;">✅ Authorization Successful!</h1>
+          <p>Please add this refresh token to Cloud Run secret <code>GOOGLE_DRIVE_OWNER_REFRESH_TOKEN</code>:</p>
+          <textarea readonly style="width: 100%; height: 100px; font-family: monospace; padding: 10px; margin: 20px 0;">${tokens.refresh_token}</textarea>
+          <p><strong>Important:</strong> Keep this token secure. Do not share it publicly.</p>
+          <p><a href="/settings" style="color: blue;">Return to Settings</a></p>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Error handling OAuth callback:', error);
+    res.status(500).send(`
+      <html>
+        <head><title>Authorization Failed</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+          <h1 style="color: red;">❌ Authorization Failed</h1>
+          <p>Error: ${error instanceof Error ? error.message : String(error)}</p>
+          <p><a href="/settings" style="color: blue;">Return to Settings</a></p>
+        </body>
+      </html>
+    `);
+  }
+});
+
+app.get('/api/auth/google/status', async (req, res) => {
+  try {
+    const refreshToken = process.env.GOOGLE_DRIVE_OWNER_REFRESH_TOKEN;
+    if (!refreshToken) {
+      return res.json({ authorized: false, message: 'Not authorized' });
+    }
+    
+    // Try to refresh token to verify it's valid
+    try {
+      await getOwnerAccessToken();
+      return res.json({ authorized: true, message: 'Authorized' });
+    } catch (error) {
+      return res.json({ authorized: false, message: 'Token expired or invalid' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check authorization status' });
   }
 });
 

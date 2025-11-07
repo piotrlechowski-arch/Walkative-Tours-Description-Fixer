@@ -1,7 +1,8 @@
 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppSettings, ValidationRules } from '../types';
+import { apiService } from '../services/apiService';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -64,6 +65,25 @@ const SelectInput: React.FC<{
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSettings }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+  const [driveAuthStatus, setDriveAuthStatus] = useState<{ authorized: boolean; message: string } | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    // Check Google Drive authorization status on mount
+    const checkAuthStatus = async () => {
+      try {
+        setCheckingAuth(true);
+        const status = await apiService.getGoogleDriveAuthStatus();
+        setDriveAuthStatus(status);
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+        setDriveAuthStatus({ authorized: false, message: 'Error checking authorization status' });
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    checkAuthStatus();
+  }, []);
   
   const handleModelChange = (modelType: 'text' | 'image', value: string) => {
     setLocalSettings(prev => ({
@@ -91,8 +111,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
     alert('Ustawienia zostały zapisane.');
   };
 
+  const handleAuthorizeGoogleDrive = () => {
+    apiService.authorizeGoogleDrive();
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
+      <SettingsSection title="Google Drive Authorization">
+        <div className="mb-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Aby wgrywać nowe zdjęcia do Google Drive, musisz autoryzować aplikację do dostępu do Twojego Google Drive.
+            To jednorazowa operacja - po autoryzacji wszystkie użytkownicy będą mogli wgrywać zdjęcia.
+          </p>
+          {checkingAuth ? (
+            <p className="text-sm text-gray-500 dark:text-gray-500">Sprawdzanie statusu autoryzacji...</p>
+          ) : driveAuthStatus?.authorized ? (
+            <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+              <span className="text-green-600 dark:text-green-400">✅</span>
+              <span className="text-sm text-green-700 dark:text-green-300">
+                Google Drive jest autoryzowany. Możesz wgrywać zdjęcia.
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                <span className="text-yellow-600 dark:text-yellow-400">⚠️</span>
+                <span className="text-sm text-yellow-700 dark:text-yellow-300">
+                  Google Drive nie jest autoryzowany. Kliknij poniżej, aby autoryzować.
+                </span>
+              </div>
+              <button
+                onClick={handleAuthorizeGoogleDrive}
+                className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Autoryzuj Google Drive
+              </button>
+            </div>
+          )}
+        </div>
+      </SettingsSection>
+
       <SettingsSection title="Brand Book / Tone of Voice">
         <TextAreaInput
           label="Główne zasady i styl komunikacji"

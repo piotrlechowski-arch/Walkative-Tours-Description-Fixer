@@ -1,6 +1,6 @@
 
 import { google } from 'googleapis';
-import { JWT } from 'google-auth-library';
+import { JWT, OAuth2Client } from 'google-auth-library';
 
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -26,6 +26,54 @@ const getSheetsClient = () => {
 const getDriveClient = () => {
     const auth = getAuth();
     return google.drive({ version: 'v3', auth });
+};
+
+// Get OAuth 2.0 client for owner's Google Drive
+const getOAuth2Client = () => {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || 
+        `${process.env.PUBLIC_URL || 'https://walkative-tours-fixer-v2-427383392801.us-west1.run.app'}/api/auth/google/callback`;
+    
+    if (!clientId || !clientSecret) {
+        return null;
+    }
+    
+    return new OAuth2Client(clientId, clientSecret, redirectUri);
+};
+
+// Get owner's access token (refresh if needed)
+const getOwnerAccessToken = async () => {
+    const refreshToken = process.env.GOOGLE_DRIVE_OWNER_REFRESH_TOKEN;
+    if (!refreshToken) {
+        throw new Error('Google Drive owner authorization required. Please authorize the app in Settings.');
+    }
+    
+    const oauth2Client = getOAuth2Client();
+    if (!oauth2Client) {
+        throw new Error('OAuth 2.0 client not configured. Please set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.');
+    }
+    
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    
+    try {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        return credentials.access_token;
+    } catch (error) {
+        console.error('Error refreshing access token:', error);
+        throw new Error('Failed to refresh access token. Please re-authorize the app in Settings.');
+    }
+};
+
+// Get Drive client using owner's OAuth token (for uploads)
+const getOwnerDriveClient = async () => {
+    const accessToken = await getOwnerAccessToken();
+    const oauth2Client = getOAuth2Client();
+    if (!oauth2Client) {
+        throw new Error('OAuth 2.0 client not configured');
+    }
+    oauth2Client.setCredentials({ access_token: accessToken });
+    return google.drive({ version: 'v3', auth: oauth2Client });
 };
 
 // Helper function to convert Google Drive URLs to viewable format for thumbnails
@@ -778,47 +826,17 @@ export async function createTour(tourData) {
  * @returns {Promise<{fileId: string, webViewLink: string, thumbnailLink: string}>}
  */
 export async function uploadPhotoToDrive(fileBuffer, fileName, folderId = null) {
-    const drive = getDriveClient();
+    // Use owner's OAuth token for uploads (not Service Account)
+    const drive = await getOwnerDriveClient();
     
     try {
-        // For Shared Drive, we need a folder ID within the Shared Drive
-        // The folderId parameter should be a folder within the Shared Drive
-        const sharedDriveId = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID || null;
-        
-        if (!folderId && !sharedDriveId) {
-            throw new Error('Either GOOGLE_DRIVE_PHOTOS_FOLDER_ID or GOOGLE_DRIVE_SHARED_DRIVE_ID must be configured');
-        }
-        
-        // Get folder metadata to determine if it's in a Shared Drive
-        let folderDriveId = null;
-        if (folderId) {
-            try {
-                const folderMetadata = await drive.files.get({
-                    fileId: folderId,
-                    fields: 'driveId',
-                    supportsAllDrives: true,
-                });
-                
-                // If folder is in a Shared Drive, use its driveId
-                if (folderMetadata.data.driveId) {
-                    folderDriveId = folderMetadata.data.driveId;
-                    console.log(`Folder ${folderId} is in Shared Drive: ${folderDriveId}`);
-                } else {
-                    throw new Error(`Folder ${folderId} is not in a Shared Drive. Service Accounts cannot upload to personal storage. Please ensure the folder is in a Shared Drive and the Service Account has access.`);
-                }
-            } catch (folderError) {
-                if (folderError.message.includes('not in a Shared Drive')) {
-                    throw folderError;
-                }
-                console.warn(`Could not get folder metadata for ${folderId}:`, folderError.message);
-                // If we can't verify, we'll try anyway but it will likely fail
-            }
-        } else if (sharedDriveId) {
-            folderDriveId = sharedDriveId;
-        }
-        
+        // Folder ID is required
         if (!folderId) {
-            throw new Error('GOOGLE_DRIVE_PHOTOS_FOLDER_ID must be configured with a folder ID in a Shared Drive');
+            const defaultFolderId = process.env.GOOGLE_DRIVE_PHOTOS_FOLDER_ID;
+            if (!defaultFolderId) {
+                throw new Error('GOOGLE_DRIVE_PHOTOS_FOLDER_ID must be configured with a folder ID in your Google Drive');
+            }
+            folderId = defaultFolderId;
         }
         
         const fileMetadata = {
@@ -835,13 +853,11 @@ export async function uploadPhotoToDrive(fileBuffer, fileName, folderId = null) 
             body: stream,
         };
         
-        // Use supportsAllDrives for Shared Drive support
-        // When uploading to Shared Drive, we must use supportsAllDrives: true
+        // Upload file using owner's OAuth token
         const createOptions = {
             requestBody: fileMetadata,
             media: media,
             fields: 'id, webViewLink, thumbnailLink',
-            supportsAllDrives: true,
         };
         
         const file = await drive.files.create(createOptions);
@@ -853,11 +869,12 @@ export async function uploadPhotoToDrive(fileBuffer, fileName, folderId = null) 
                 role: 'reader',
                 type: 'anyone',
             },
-            supportsAllDrives: true,
         });
         
         // Generate thumbnail URL
         const thumbnailLink = `https://drive.google.com/thumbnail?id=${file.data.id}&sz=w400`;
+        
+        console.log(`Successfully uploaded ${fileName} to Drive folder ${folderId}`);
         
         return {
             fileId: file.data.id,

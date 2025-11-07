@@ -112,4 +112,15 @@ export const apiService = {
     });
     return handleResponse(response);
   },
+
+  // OAuth 2.0 Google Drive authorization
+  authorizeGoogleDrive: async (): Promise<void> => {
+    // Redirect to OAuth endpoint
+    window.location.href = '/api/auth/google';
+  },
+
+  getGoogleDriveAuthStatus: async (): Promise<{ authorized: boolean; message: string }> => {
+    const response = await fetch('/api/auth/google/status');
+    return handleResponse(response);
+  },
 };
