@@ -18,11 +18,27 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-        // Accept only image files
-        if (file.mimetype.startsWith('image/')) {
+        // Accept image files including HEIC
+        const allowedMimes = [
+            'image/jpeg',
+            'image/jpg', 
+            'image/png',
+            'image/webp',
+            'image/heic',
+            'image/heif',
+            'image/heic-sequence',
+            'image/heif-sequence'
+        ];
+        
+        // Check mimetype or extension for HEIC files
+        const isImage = file.mimetype.startsWith('image/') || 
+                       allowedMimes.includes(file.mimetype.toLowerCase()) ||
+                       /\.(heic|heif)$/i.test(file.originalname);
+        
+        if (isImage) {
             cb(null, true);
         } else {
-            cb(new Error('Only image files are allowed'), false);
+            cb(new Error('Only image files are allowed (JPEG, PNG, WebP, HEIC)'), false);
         }
     }
 });
@@ -382,18 +398,65 @@ app.post('/api/upload-photo', upload.single('photo'), async (req, res) => {
             return res.status(400).json({ error: 'City is required' });
         }
 
-        // Convert image to WebP with high compression
+        // Convert image to WebP with aggressive compression
         // Sharp supports HEIC, JPEG, PNG, WebP, and many other formats
         let image = sharp(req.file.buffer);
         
-        // Get image metadata to check format
+        // Get image metadata to check format and size
         const metadata = await image.metadata();
-        console.log(`Uploaded image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}`);
+        console.log(`Uploaded image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}, original size: ${req.file.buffer.length} bytes`);
         
-        // Convert to WebP with high compression
-        const webpBuffer = await image
-            .webp({ quality: 75, effort: 6 }) // High compression
+        // Resize if image is too large (max width 1920px, maintain aspect ratio)
+        if (metadata.width && metadata.width > 1920) {
+            image = image.resize(1920, null, {
+                withoutEnlargement: true,
+                fit: 'inside'
+            });
+            console.log(`Resizing image from ${metadata.width}px to max 1920px width`);
+        }
+        
+        // Convert to WebP with aggressive compression
+        // Quality: 60 (lower = smaller file, but still good quality)
+        // Effort: 6 (maximum compression effort)
+        let webpBuffer = await image
+            .webp({ 
+                quality: 60,  // Reduced from 75 for smaller files
+                effort: 6,     // Maximum compression effort
+                nearLossless: false,
+                smartSubsample: true
+            })
             .toBuffer();
+        
+        // If file is still too large (>300KB), reduce quality further
+        const maxSize = 300 * 1024; // 300KB
+        let quality = 60;
+        let attempts = 0;
+        const maxAttempts = 5;
+        
+        while (webpBuffer.length > maxSize && attempts < maxAttempts && quality > 30) {
+            quality -= 10;
+            attempts++;
+            console.log(`File too large (${webpBuffer.length} bytes), reducing quality to ${quality}`);
+            
+            image = sharp(req.file.buffer);
+            if (metadata.width && metadata.width > 1920) {
+                image = image.resize(1920, null, {
+                    withoutEnlargement: true,
+                    fit: 'inside'
+                });
+            }
+            
+            webpBuffer = await image
+                .webp({ 
+                    quality: quality,
+                    effort: 6,
+                    nearLossless: false,
+                    smartSubsample: true
+                })
+                .toBuffer();
+        }
+        
+        console.log(`Final WebP size: ${webpBuffer.length} bytes (${(webpBuffer.length / 1024).toFixed(1)} KB), quality: ${quality}`);
 
         // Generate unique photo ID
         const photoId = generatePhotoId();
