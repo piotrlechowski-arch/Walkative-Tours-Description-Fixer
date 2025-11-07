@@ -186,8 +186,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             isLoading={isLoading}
             feedback={feedback}
             setFeedback={setFeedback}
-            renameInDrive={renameInDrive}
-            setRenameInDrive={setRenameInDrive}
+            renameInDrive={false}
+            setRenameInDrive={() => {}}
             mode={mode}
             validationResults={validationResults}
             settings={settings}
