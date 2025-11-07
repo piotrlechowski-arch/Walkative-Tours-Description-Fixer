@@ -77,6 +77,14 @@ const getOwnerDriveClient = async () => {
 };
 
 // Helper function to convert Google Drive URLs to viewable format for thumbnails
+// Extract fileId from Google Drive URL
+const extractFileIdFromUrl = (url) => {
+    if (!url) return null;
+    // Match patterns like: /d/FILE_ID/ or ?id=FILE_ID
+    const match = url.match(/\/d\/([^\/]+)/) || url.match(/[?&]id=([^&]+)/);
+    return match ? match[1] : null;
+};
+
 const convertDriveUrlToViewable = (url) => {
     if (!url) return url;
     
@@ -442,18 +450,22 @@ export async function getTourDetails(name) {
             const photoId = p.ID || p.id;
             const hasMatch = photoIdSet.has(photoId);
             if (hasMatch) {
-                console.log('Found matching photo:', photoId, 'driveFileId:', p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || 'MISSING');
+                const driveFileId = p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || '';
+                const fileIdFromUrl = driveFileId || extractFileIdFromUrl(p.URL || p.url);
+                console.log('Found matching photo:', photoId, 'driveFileId:', fileIdFromUrl || 'MISSING', 'URL:', p.URL || p.url);
             }
             return hasMatch;
         })
         .map(p => {
             const driveFileId = p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || '';
+            // Fallback: extract fileId from URL if driveFileId column doesn't exist
+            const fileIdFromUrl = driveFileId || extractFileIdFromUrl(p.URL || p.url);
             return {
                 ...p,
                 id: p.ID || p.id, // Normalize to lowercase 'id'
                 url: convertDriveUrlToViewable(p.URL || p.url), // Convert URL to viewable format
                 name: p.Name || p.name,
-                driveFileId: driveFileId, // Map driveFileId (handle various case variations)
+                driveFileId: fileIdFromUrl || '', // Use driveFileId from column or extract from URL
                 metadata: {}
             };
         });
