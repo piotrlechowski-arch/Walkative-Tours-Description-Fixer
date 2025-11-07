@@ -30,6 +30,9 @@ ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y \
     libvips-dev \
     libheif-dev \
+    libheif1 \
+    libde265-0 \
+    libx265-199 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies only
