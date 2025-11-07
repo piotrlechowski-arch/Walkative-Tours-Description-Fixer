@@ -655,10 +655,26 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
             
             if (sourcePhoto && sourcePhoto.driveFileId) {
                 try {
+                    // Get file metadata to check if it's in Shared Drive
+                    let fileDriveId = null;
+                    try {
+                        const fileMetadata = await drive.files.get({
+                            fileId: sourcePhoto.driveFileId,
+                            fields: 'driveId',
+                            supportsAllDrives: true,
+                        });
+                        if (fileMetadata.data.driveId) {
+                            fileDriveId = fileMetadata.data.driveId;
+                        }
+                    } catch (metaError) {
+                        console.warn(`Could not get file metadata for ${sourcePhoto.driveFileId}:`, metaError.message);
+                    }
+                    
                     await drive.files.update({
                         fileId: sourcePhoto.driveFileId,
                         requestBody: { name: photoMeta.newName },
                         supportsAllDrives: true,
+                        ...(fileDriveId && { driveId: fileDriveId }),
                     });
                     console.log(`✓ Successfully renamed file ${sourcePhoto.driveFileId} to ${photoMeta.newName}`);
                 } catch (e) {
@@ -773,9 +789,41 @@ export async function uploadPhotoToDrive(fileBuffer, fileName, folderId = null) 
             throw new Error('Either GOOGLE_DRIVE_PHOTOS_FOLDER_ID or GOOGLE_DRIVE_SHARED_DRIVE_ID must be configured');
         }
         
+        // Get folder metadata to determine if it's in a Shared Drive
+        let folderDriveId = null;
+        if (folderId) {
+            try {
+                const folderMetadata = await drive.files.get({
+                    fileId: folderId,
+                    fields: 'driveId',
+                    supportsAllDrives: true,
+                });
+                
+                // If folder is in a Shared Drive, use its driveId
+                if (folderMetadata.data.driveId) {
+                    folderDriveId = folderMetadata.data.driveId;
+                    console.log(`Folder ${folderId} is in Shared Drive: ${folderDriveId}`);
+                } else {
+                    throw new Error(`Folder ${folderId} is not in a Shared Drive. Service Accounts cannot upload to personal storage. Please ensure the folder is in a Shared Drive and the Service Account has access.`);
+                }
+            } catch (folderError) {
+                if (folderError.message.includes('not in a Shared Drive')) {
+                    throw folderError;
+                }
+                console.warn(`Could not get folder metadata for ${folderId}:`, folderError.message);
+                // If we can't verify, we'll try anyway but it will likely fail
+            }
+        } else if (sharedDriveId) {
+            folderDriveId = sharedDriveId;
+        }
+        
+        if (!folderId) {
+            throw new Error('GOOGLE_DRIVE_PHOTOS_FOLDER_ID must be configured with a folder ID in a Shared Drive');
+        }
+        
         const fileMetadata = {
             name: fileName,
-            ...(folderId && { parents: [folderId] })
+            parents: [folderId]
         };
         
         // Convert Buffer to stream for Google Drive API
@@ -788,6 +836,7 @@ export async function uploadPhotoToDrive(fileBuffer, fileName, folderId = null) 
         };
         
         // Use supportsAllDrives for Shared Drive support
+        // When uploading to Shared Drive, we must use supportsAllDrives: true
         const createOptions = {
             requestBody: fileMetadata,
             media: media,
