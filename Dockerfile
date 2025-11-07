@@ -26,6 +26,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Install system dependencies for Sharp image processing (including HEIC support)
+RUN apt-get update && apt-get install -y \
+    libvips-dev \
+    libheif-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install production dependencies only
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
