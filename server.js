@@ -383,7 +383,15 @@ app.post('/api/upload-photo', upload.single('photo'), async (req, res) => {
         }
 
         // Convert image to WebP with high compression
-        const webpBuffer = await sharp(req.file.buffer)
+        // Sharp supports HEIC, JPEG, PNG, WebP, and many other formats
+        let image = sharp(req.file.buffer);
+        
+        // Get image metadata to check format
+        const metadata = await image.metadata();
+        console.log(`Uploaded image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}`);
+        
+        // Convert to WebP with high compression
+        const webpBuffer = await image
             .webp({ quality: 75, effort: 6 }) // High compression
             .toBuffer();
 

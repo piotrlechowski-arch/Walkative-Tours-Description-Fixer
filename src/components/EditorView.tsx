@@ -42,7 +42,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
 }) => {
   const [mode, setMode] = useState<Mode>('EN');
   const [feedback, setFeedback] = useState('');
-  const [renameInDrive, setRenameInDrive] = useState(false);
   const [validationResults, setValidationResults] = useState<{[key: string]: ValidationResult}>({});
   const [isEditingCanonical, setIsEditingCanonical] = useState(false);
 
@@ -51,7 +50,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
     // Reset state when tour changes
     setMode('EN');
     setFeedback('');
-    setRenameInDrive(false);
     setIsEditingCanonical(false);
   }, [sourceTour.name]);
 
@@ -90,10 +88,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
   
   const handleGenerateClick = () => {
-      onGenerate(mode, feedback, renameInDrive);
+      onGenerate(mode, feedback, false); // renameInDrive not needed for generate
   };
   
   const handleAcceptClick = () => {
+      if (processedData) {
+          // Always copy files to "Nowe" folder when accepting changes
+          onAccept(mode, processedData, true); // Always set renameInDrive=true
+      }
+  };
+  
+  const handleAcceptClickOld = () => {
       if (processedData) {
         // Ensure description is present before accepting
         if (!processedData.description) {
@@ -126,7 +131,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleSaveEdit = () => {
     if (processedData) {
-      onAccept('EN', processedData, false); // No need to rename files on manual edit
+      onAccept('EN', processedData, true); // Always copy files when accepting manual edits
       setIsEditingCanonical(false);
       setProcessedData(null);
     }
@@ -256,8 +261,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
               isLoading={isLoading}
               feedback={feedback}
               setFeedback={setFeedback}
-              renameInDrive={renameInDrive}
-              setRenameInDrive={setRenameInDrive}
+              renameInDrive={false}
+              setRenameInDrive={() => {}}
               mode={mode}
               validationResults={validationResults}
               settings={settings}

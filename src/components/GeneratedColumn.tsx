@@ -12,8 +12,8 @@ interface GeneratedColumnProps {
   isLoading: boolean;
   feedback: string;
   setFeedback: (value: string) => void;
-  renameInDrive: boolean;
-  setRenameInDrive: (value: boolean) => void;
+  renameInDrive: boolean; // Kept for backward compatibility but not used
+  setRenameInDrive: (value: boolean) => void; // Kept for backward compatibility but not used
   mode: 'EN' | Language;
   validationResults: {[key: string]: ValidationResult};
   settings: AppSettings;
@@ -326,22 +326,6 @@ export const GeneratedColumn: React.FC<GeneratedColumnProps> = ({
               />
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center min-h-[24px]">
-                {isDataReady && (
-                  <>
-                    <input
-                      id="rename-drive"
-                      type="checkbox"
-                      checked={renameInDrive}
-                      onChange={(e) => setRenameInDrive(e.target.checked)}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="rename-drive" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                      Zmień nazwy plików w Drive
-                    </label>
-                  </>
-                )}
-              </div>
               <div className="flex items-center space-x-2 w-full sm:w-auto flex-wrap gap-2">
                 {/* Main "Generate" button - generates both description and photos simultaneously */}
                 <button

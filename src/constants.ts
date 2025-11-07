@@ -71,6 +71,8 @@ Si se incumple una regla, reescribe solo la sección problemática, conservando 
 
 export const PROMPT_PHOTO_BASE = `Analizujesz zdjęcia przypisane do konkretnej wycieczki i tworzysz metadane w języku {{LANG}}. Każde zdjęcie oceniaj w kontekście: city, tour name oraz kanonicznego opisu EN (short/long/highlights) – to pozwala rozpoznać miejsce, motyw i użyć właściwych nazw.
 
+WAŻNE: ZAWSZE zwróć metadane dla zdjęcia, nawet jeśli nie jest idealnie związane z wycieczką. Jeśli zdjęcie nie pasuje do tematu wycieczki, opisz je neutralnie używając kontekstu miasta i wycieczki.
+
 Dla każdego zdjęcia zwróć obiekt:
 - newName – docelowa nazwa pliku (kebab-case, ascii, bez znaków PL/DE/ES), format: {{city}}-{{główne_miejsce}}-{{kontekst}}-{{unikalny-sufiks}}.webp.
 - caption – 1–2 zdania, żywe i rzeczowe, naturalne dla {{LANG}}; unikać klisz i wykrzykników.
@@ -80,6 +82,8 @@ Dla każdego zdjęcia zwróć obiekt:
 Zasady:
 - Nie zmieniaj nazw własnych; używaj tych z kontekstu (dzielnice, katedry, place).
 - Nie zgaduj na siłę – jeśli niepewność, opisz neutralnie („widok na…", „fragment…").
+- Jeśli zdjęcie nie pasuje do tematu wycieczki, opisz je używając kontekstu miasta i ogólnego tematu wycieczki.
+- ZAWSZE zwróć poprawny JSON array, nawet dla zdjęć które nie pasują idealnie.
 - Zachowaj spójność z kanonicznym EN (brzmienie nazw, kolejność skojarzeń).
 - Wyjście JSON array: [ { "id": "photoId", "newName": "...", "caption": "...", "alt": "...", "description": "..." }, … ] – gdzie id = Photo ID z arkusza.`;
 
