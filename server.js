@@ -77,6 +77,17 @@ const getOwnerAccessToken = async () => {
   }
 };
 
+// Get Drive client using owner's OAuth token (for uploads and rename)
+const getOwnerDriveClient = async () => {
+  const accessToken = await getOwnerAccessToken();
+  const oauth2Client = getOAuth2Client();
+  if (!oauth2Client) {
+    throw new Error('OAuth 2.0 client not configured');
+  }
+  oauth2Client.setCredentials({ access_token: accessToken });
+  return google.drive({ version: 'v3', auth: oauth2Client });
+};
+
 // Helper to get Google Drive client (with write access for uploads)
 const getDriveClient = () => {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS);
@@ -564,16 +575,21 @@ Zasady:
         // Automatically rename file in Drive if newName was generated
         if (metadata.newName && fileId) {
             try {
+                console.log(`Attempting to automatically rename file ${fileId} to ${metadata.newName}`);
                 const ownerDrive = await getOwnerDriveClient();
-                await ownerDrive.files.update({
+                const result = await ownerDrive.files.update({
                     fileId: fileId,
                     requestBody: { name: metadata.newName },
                 });
-                console.log(`✓ Automatically renamed uploaded file ${fileId} to ${metadata.newName}`);
+                console.log(`✓ Successfully automatically renamed uploaded file ${fileId} to ${metadata.newName}`);
+                console.log(`  Renamed file details:`, result.data);
             } catch (renameError) {
-                console.warn(`⚠ Could not automatically rename file ${fileId}:`, renameError.message);
+                console.error(`✗ Failed to automatically rename file ${fileId}:`, renameError.message);
+                console.error(`  Error details:`, renameError);
                 // Don't fail the whole operation if rename fails
             }
+        } else {
+            console.log(`Skipping automatic rename: newName=${!!metadata.newName}, fileId=${!!fileId}`);
         }
         
         res.status(200).json({ 

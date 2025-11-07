@@ -420,7 +420,20 @@ export async function getTourDetails(name) {
     console.log('Looking for photoIds:', tour.photoIds);
     
     const allPhotos = photosRows.map(row => sheetDataToObject(photosHeader, row));
+    console.log('Photos_Source header:', photosHeader);
     console.log('Sample photo objects (first 3):', allPhotos.slice(0, 3));
+    
+    // Log available keys in first photo to debug driveFileId mapping
+    if (allPhotos.length > 0) {
+        const firstPhoto = allPhotos[0];
+        console.log('Available keys in first photo:', Object.keys(firstPhoto));
+        console.log('driveFileId variations:', {
+            driveFileId: firstPhoto.driveFileId,
+            drivefileid: firstPhoto.drivefileid,
+            DriveFileId: firstPhoto.DriveFileId,
+            DriveFileID: firstPhoto.DriveFileID,
+        });
+    }
     
     const photoIdSet = new Set(tour.photoIds);
     const photos = allPhotos
@@ -428,17 +441,22 @@ export async function getTourDetails(name) {
             // Handle both 'ID' (from sheet header) and 'id' (lowercase)
             const photoId = p.ID || p.id;
             const hasMatch = photoIdSet.has(photoId);
-            if (hasMatch) console.log('Found matching photo:', photoId);
+            if (hasMatch) {
+                console.log('Found matching photo:', photoId, 'driveFileId:', p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || 'MISSING');
+            }
             return hasMatch;
         })
-        .map(p => ({
-            ...p,
-            id: p.ID || p.id, // Normalize to lowercase 'id'
-            url: convertDriveUrlToViewable(p.URL || p.url), // Convert URL to viewable format
-            name: p.Name || p.name,
-            driveFileId: p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || '', // Map driveFileId (handle various case variations)
-            metadata: {}
-        }));
+        .map(p => {
+            const driveFileId = p.driveFileId || p.drivefileid || p.DriveFileId || p.DriveFileID || '';
+            return {
+                ...p,
+                id: p.ID || p.id, // Normalize to lowercase 'id'
+                url: convertDriveUrlToViewable(p.URL || p.url), // Convert URL to viewable format
+                name: p.Name || p.name,
+                driveFileId: driveFileId, // Map driveFileId (handle various case variations)
+                metadata: {}
+            };
+        });
 
     console.log('Filtered photos count:', photos.length);
     return { tour, photos };
