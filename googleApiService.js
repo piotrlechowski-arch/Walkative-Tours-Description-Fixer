@@ -715,14 +715,24 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
         throw new Error(`Failed to save photo metadata: ${error.message || String(error)}`);
     }
     
-    // 3. Rename files in Drive if requested
+    // 3. Copy files to "Nowe" folder with new names if requested
     if (renameInDrive) {
-        // Use owner's OAuth token for rename (not Service Account)
+        // Use owner's OAuth token for copying (not Service Account)
         const drive = await getOwnerDriveClient();
+        // Use Service Account for reading old files
+        const readDrive = getDriveClient();
         const { photos: sourcePhotos } = await getTourDetails(tourName);
+        
+        // Get target folder ID (should be "Nowe" subfolder)
+        const targetFolderId = process.env.GOOGLE_DRIVE_PHOTOS_FOLDER_ID;
+        if (!targetFolderId) {
+            console.warn('⚠ GOOGLE_DRIVE_PHOTOS_FOLDER_ID not configured, skipping file copy');
+            return;
+        }
 
-        console.log(`=== RENAMING FILES IN DRIVE ===`);
-        console.log(`Tour: ${tourName}, Photos to rename: ${data.photos?.length || 0}`);
+        console.log(`=== COPYING FILES TO "Nowe" FOLDER WITH NEW NAMES ===`);
+        console.log(`Tour: ${tourName}, Photos to copy: ${data.photos?.length || 0}`);
+        console.log(`Target folder ID: ${targetFolderId}`);
         console.log(`Source photos count: ${sourcePhotos.length}`);
         
         for (const photoMeta of data.photos) {
@@ -734,13 +744,58 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
             
             if (sourcePhoto && sourcePhoto.driveFileId && photoMeta.newName) {
                 try {
-                    await drive.files.update({
-                        fileId: sourcePhoto.driveFileId,
-                        requestBody: { name: photoMeta.newName },
+                    // Step 1: Download file content using Service Account (read access)
+                    let fileBuffer;
+                    try {
+                        const fileResponse = await readDrive.files.get({
+                            fileId: sourcePhoto.driveFileId,
+                            alt: 'media',
+                            supportsAllDrives: true
+                        }, { responseType: 'arraybuffer' });
+                        fileBuffer = Buffer.from(fileResponse.data);
+                        console.log(`  ✓ Downloaded file ${sourcePhoto.driveFileId}, size: ${fileBuffer.length} bytes`);
+                    } catch (downloadError) {
+                        console.error(`  ✗ Failed to download file ${sourcePhoto.driveFileId}:`, downloadError.message);
+                        continue;
+                    }
+                    
+                    // Step 2: Upload to "Nowe" folder with new name using OAuth
+                    const newFileResult = await uploadPhotoToDrive(fileBuffer, photoMeta.newName, targetFolderId);
+                    console.log(`  ✓ Successfully copied file to ${photoMeta.newName} in folder ${targetFolderId}`);
+                    console.log(`    New file ID: ${newFileResult.fileId}`);
+                    
+                    // Step 3: Update URL in Photos_Source
+                    const sheets = getSheetsClient();
+                    const photosRes = await sheets.spreadsheets.values.get({
+                        spreadsheetId: SPREADSHEET_ID,
+                        range: 'Photos_Source!A:AZ'
                     });
-                    console.log(`✓ Successfully renamed file ${sourcePhoto.driveFileId} to ${photoMeta.newName}`);
+                    const photoValues = photosRes.data.values || [];
+                    const [photosHeader = [], ...photosRows] = photoValues;
+                    
+                    // Find row with matching photo ID
+                    const photoRowIndex = photosRows.findIndex(row => {
+                        const photoId = row[photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'id')];
+                        return photoId === photoMeta.id;
+                    });
+                    
+                    if (photoRowIndex !== -1) {
+                        const urlColumnIndex = photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'url');
+                        if (urlColumnIndex !== -1) {
+                            const newUrl = newFileResult.thumbnailLink || newFileResult.webViewLink;
+                            const updateRange = `Photos_Source!${String.fromCharCode(65 + urlColumnIndex)}${photoRowIndex + 2}`;
+                            await sheets.spreadsheets.values.update({
+                                spreadsheetId: SPREADSHEET_ID,
+                                range: updateRange,
+                                valueInputOption: 'USER_ENTERED',
+                                requestBody: { values: [[newUrl]] }
+                            });
+                            console.log(`  ✓ Updated URL in Photos_Source for photo ${photoMeta.id}`);
+                        }
+                    }
+                    
                 } catch (e) {
-                    console.error(`✗ Failed to rename file ${sourcePhoto.driveFileId}:`, e.message);
+                    console.error(`✗ Failed to copy file ${sourcePhoto.driveFileId}:`, e.message);
                     console.error(`  Error details:`, e);
                 }
             } else {
@@ -751,9 +806,9 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
                 console.warn(`⚠ Skipping photo ${photoMeta.id}: ${reasons.join(', ')}`);
             }
         }
-        console.log(`=== RENAME OPERATION COMPLETE ===`);
+        console.log(`=== COPY OPERATION COMPLETE ===`);
     } else {
-        console.log(`Rename in Drive not requested (renameInDrive=false)`);
+        console.log(`Copy to "Nowe" folder not requested (renameInDrive=false)`);
     }
 }
 
