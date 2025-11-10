@@ -18,10 +18,11 @@
     "express": "^4.19.2",
     "google-auth-library": "^9.11.0",
     "googleapis": "^140.0.1",
+    "heic-convert": "^2.1.0",
     "multer": "^1.4.5-lts.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sharp": "^0.33.0",
+    "sharp": "^0.32.6",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

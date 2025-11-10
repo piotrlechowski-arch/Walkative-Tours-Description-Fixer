@@ -35,7 +35,11 @@ export const AddTourView: React.FC<AddTourViewProps> = ({ onTourAdded }) => {
     if (!files) return;
     
     Array.from(files).forEach(file => {
-      if (file.type.startsWith('image/')) {
+      // Accept all files that are images OR have image extensions (HEIC files may have empty type)
+      const isImage = file.type.startsWith('image/') || 
+                     /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(file.name);
+      
+      if (isImage) {
         const preview = URL.createObjectURL(file);
         setUploadingPhotos(prev => [...prev, { file, preview, status: 'uploading' }]);
         
@@ -300,7 +304,7 @@ export const AddTourView: React.FC<AddTourViewProps> = ({ onTourAdded }) => {
                   <span className="font-semibold">Kliknij aby wybrać</span> lub przeciągnij i upuść zdjęcia tutaj
                 </p>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-                  Pliki zostaną automatycznie skonwertowane na WebP i wgrane do Google Drive
+                  Akceptowane formaty: JPG, PNG, WebP, HEIC. Pliki zostaną automatycznie skonwertowane na WebP.
                 </p>
               </label>
             </div>

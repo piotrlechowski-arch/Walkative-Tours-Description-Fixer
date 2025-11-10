@@ -126,7 +126,11 @@ export const SourceColumn: React.FC<SourceColumnProps> = ({ tour, photos, mode, 
                 e.preventDefault();
                 setIsDragging(false);
                 if (isUploading) return;
-                const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+                // Accept all files that are images OR have image extensions (HEIC files may have empty type)
+                const files = Array.from(e.dataTransfer.files).filter(file => 
+                  file.type.startsWith('image/') || 
+                  /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(file.name)
+                );
                 if (files.length > 0) {
                   await handleFileUpload(files[0]);
                 }
@@ -160,7 +164,7 @@ export const SourceColumn: React.FC<SourceColumnProps> = ({ tour, photos, mode, 
                     Przeciągnij zdjęcie tutaj lub kliknij, aby wybrać
                   </p>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-                    Zdjęcie zostanie skompresowane do WebP, przeanalizowane i dodane do wycieczki
+                    Akceptowane formaty: JPG, PNG, WebP, HEIC. Zdjęcie zostanie skompresowane do WebP i przeanalizowane.
                   </p>
                 </>
               )}

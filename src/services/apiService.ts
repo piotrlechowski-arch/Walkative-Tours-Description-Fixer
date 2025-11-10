@@ -123,4 +123,43 @@ export const apiService = {
     const response = await fetch('/api/auth/google/status');
     return handleResponse(response);
   },
+
+  // Prompts API
+  getPrompts: async (): Promise<{ prompts: Record<string, string>; rules: Partial<Record<keyof import('../types').ValidationRules, number>> }> => {
+    const response = await fetch('/api/prompts');
+    return handleResponse(response);
+  },
+
+  updatePrompt: async (promptId: string, promptText: string): Promise<{ success: boolean }> => {
+    const response = await fetch(`/api/prompts/${encodeURIComponent(promptId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompt: promptText }),
+    });
+    return handleResponse(response);
+  },
+
+  updateCharLimit: async (limitId: string, value: number): Promise<{ success: boolean }> => {
+    const response = await fetch(`/api/prompts/char-limits/${encodeURIComponent(limitId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value }),
+    });
+    return handleResponse(response);
+  },
+
+  initializePromptsSheet: async (constantsData: any): Promise<{ success: boolean; count: number }> => {
+    const response = await fetch('/api/prompts/initialize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ constantsData }),
+    });
+    return handleResponse(response);
+  },
 };

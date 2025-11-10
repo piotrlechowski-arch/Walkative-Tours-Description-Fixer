@@ -744,58 +744,127 @@ export async function acceptChanges(tourName, mode, data, renameInDrive) {
             
             if (sourcePhoto && sourcePhoto.driveFileId && photoMeta.newName) {
                 try {
-                    // Step 1: Download file content using Service Account (read access)
-                    let fileBuffer;
-                    try {
-                        const fileResponse = await readDrive.files.get({
+                    // Step 0: Check if file is already in target folder
+                    const fileMetadata = await drive.files.get({
+                        fileId: sourcePhoto.driveFileId,
+                        fields: 'parents,name',
+                        supportsAllDrives: true
+                    });
+                    
+                    const isAlreadyInTargetFolder = fileMetadata.data.parents?.includes(targetFolderId);
+                    const currentName = fileMetadata.data.name;
+                    const needsRename = currentName !== photoMeta.newName;
+                    
+                    console.log(`  - Already in target folder: ${isAlreadyInTargetFolder}`);
+                    console.log(`  - Current name: ${currentName}`);
+                    console.log(`  - New name: ${photoMeta.newName}`);
+                    console.log(`  - Needs rename: ${needsRename}`);
+                    
+                    if (isAlreadyInTargetFolder && needsRename) {
+                        // RENAME: File is already in target folder, just rename it
+                        console.log(`  → Action: RENAME (already in target folder)`);
+                        await drive.files.update({
                             fileId: sourcePhoto.driveFileId,
-                            alt: 'media',
+                            requestBody: { name: photoMeta.newName },
                             supportsAllDrives: true
-                        }, { responseType: 'arraybuffer' });
-                        fileBuffer = Buffer.from(fileResponse.data);
-                        console.log(`  ✓ Downloaded file ${sourcePhoto.driveFileId}, size: ${fileBuffer.length} bytes`);
-                    } catch (downloadError) {
-                        console.error(`  ✗ Failed to download file ${sourcePhoto.driveFileId}:`, downloadError.message);
-                        continue;
-                    }
-                    
-                    // Step 2: Upload to "Nowe" folder with new name using OAuth
-                    const newFileResult = await uploadPhotoToDrive(fileBuffer, photoMeta.newName, targetFolderId);
-                    console.log(`  ✓ Successfully copied file to ${photoMeta.newName} in folder ${targetFolderId}`);
-                    console.log(`    New file ID: ${newFileResult.fileId}`);
-                    
-                    // Step 3: Update URL in Photos_Source
-                    const sheets = getSheetsClient();
-                    const photosRes = await sheets.spreadsheets.values.get({
-                        spreadsheetId: SPREADSHEET_ID,
-                        range: 'Photos_Source!A:AZ'
-                    });
-                    const photoValues = photosRes.data.values || [];
-                    const [photosHeader = [], ...photosRows] = photoValues;
-                    
-                    // Find row with matching photo ID
-                    const photoRowIndex = photosRows.findIndex(row => {
-                        const photoId = row[photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'id')];
-                        return photoId === photoMeta.id;
-                    });
-                    
-                    if (photoRowIndex !== -1) {
-                        const urlColumnIndex = photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'url');
-                        if (urlColumnIndex !== -1) {
-                            const newUrl = newFileResult.thumbnailLink || newFileResult.webViewLink;
-                            const updateRange = `Photos_Source!${String.fromCharCode(65 + urlColumnIndex)}${photoRowIndex + 2}`;
-                            await sheets.spreadsheets.values.update({
-                                spreadsheetId: SPREADSHEET_ID,
-                                range: updateRange,
-                                valueInputOption: 'USER_ENTERED',
-                                requestBody: { values: [[newUrl]] }
-                            });
-                            console.log(`  ✓ Updated URL in Photos_Source for photo ${photoMeta.id}`);
+                        });
+                        console.log(`  ✓ Renamed file to ${photoMeta.newName}`);
+                        
+                        // Fetch updated file metadata to get new URL
+                        const updatedFile = await drive.files.get({
+                            fileId: sourcePhoto.driveFileId,
+                            fields: 'webViewLink,thumbnailLink',
+                            supportsAllDrives: true
+                        });
+                        
+                        // Update URL in Photos_Source
+                        const sheets = getSheetsClient();
+                        const photosRes = await sheets.spreadsheets.values.get({
+                            spreadsheetId: SPREADSHEET_ID,
+                            range: 'Photos_Source!A:AZ'
+                        });
+                        const photoValues = photosRes.data.values || [];
+                        const [photosHeader = [], ...photosRows] = photoValues;
+                        
+                        const photoRowIndex = photosRows.findIndex(row => {
+                            const photoId = row[photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'id')];
+                            return photoId === photoMeta.id;
+                        });
+                        
+                        if (photoRowIndex !== -1) {
+                            const urlColumnIndex = photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'url');
+                            if (urlColumnIndex !== -1) {
+                                const newUrl = updatedFile.data.thumbnailLink || updatedFile.data.webViewLink;
+                                const updateRange = `Photos_Source!${String.fromCharCode(65 + urlColumnIndex)}${photoRowIndex + 2}`;
+                                await sheets.spreadsheets.values.update({
+                                    spreadsheetId: SPREADSHEET_ID,
+                                    range: updateRange,
+                                    valueInputOption: 'USER_ENTERED',
+                                    requestBody: { values: [[newUrl]] }
+                                });
+                                console.log(`  ✓ Updated URL in Photos_Source for photo ${photoMeta.id}`);
+                            }
+                        }
+                    } else if (isAlreadyInTargetFolder && !needsRename) {
+                        // SKIP: File already has correct name in target folder
+                        console.log(`  → Action: SKIP (file already has correct name)`);
+                    } else if (!isAlreadyInTargetFolder) {
+                        // COPY: File is in another folder, need to copy it
+                        console.log(`  → Action: COPY (file in different folder)`);
+                        
+                        // Step 1: Download file content using Service Account (read access)
+                        let fileBuffer;
+                        try {
+                            const fileResponse = await readDrive.files.get({
+                                fileId: sourcePhoto.driveFileId,
+                                alt: 'media',
+                                supportsAllDrives: true
+                            }, { responseType: 'arraybuffer' });
+                            fileBuffer = Buffer.from(fileResponse.data);
+                            console.log(`  ✓ Downloaded file ${sourcePhoto.driveFileId}, size: ${fileBuffer.length} bytes`);
+                        } catch (downloadError) {
+                            console.error(`  ✗ Failed to download file ${sourcePhoto.driveFileId}:`, downloadError.message);
+                            continue;
+                        }
+                        
+                        // Step 2: Upload to "Nowe" folder with new name using OAuth
+                        const newFileResult = await uploadPhotoToDrive(fileBuffer, photoMeta.newName, targetFolderId);
+                        console.log(`  ✓ Successfully copied file to ${photoMeta.newName} in folder ${targetFolderId}`);
+                        console.log(`    New file ID: ${newFileResult.fileId}`);
+                        
+                        // Step 3: Update URL in Photos_Source
+                        const sheets = getSheetsClient();
+                        const photosRes = await sheets.spreadsheets.values.get({
+                            spreadsheetId: SPREADSHEET_ID,
+                            range: 'Photos_Source!A:AZ'
+                        });
+                        const photoValues = photosRes.data.values || [];
+                        const [photosHeader = [], ...photosRows] = photoValues;
+                        
+                        // Find row with matching photo ID
+                        const photoRowIndex = photosRows.findIndex(row => {
+                            const photoId = row[photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'id')];
+                            return photoId === photoMeta.id;
+                        });
+                        
+                        if (photoRowIndex !== -1) {
+                            const urlColumnIndex = photosHeader.findIndex(h => (h || '').trim().toLowerCase() === 'url');
+                            if (urlColumnIndex !== -1) {
+                                const newUrl = newFileResult.thumbnailLink || newFileResult.webViewLink;
+                                const updateRange = `Photos_Source!${String.fromCharCode(65 + urlColumnIndex)}${photoRowIndex + 2}`;
+                                await sheets.spreadsheets.values.update({
+                                    spreadsheetId: SPREADSHEET_ID,
+                                    range: updateRange,
+                                    valueInputOption: 'USER_ENTERED',
+                                    requestBody: { values: [[newUrl]] }
+                                });
+                                console.log(`  ✓ Updated URL in Photos_Source for photo ${photoMeta.id}`);
+                            }
                         }
                     }
                     
                 } catch (e) {
-                    console.error(`✗ Failed to copy file ${sourcePhoto.driveFileId}:`, e.message);
+                    console.error(`✗ Failed to process file ${sourcePhoto.driveFileId}:`, e.message);
                     console.error(`  Error details:`, e);
                 }
             } else {
@@ -1106,5 +1175,336 @@ export async function addPhotoToSource(photoId, url, name, city, country, driveF
     } catch (error) {
         console.error('Error adding photo to Photos_Source:', error);
         throw new Error(`Failed to add photo to Photos_Source: ${error.message || String(error)}`);
+    }
+}
+
+// ============================================================================
+// PROMPTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Get all prompts from the Prompts sheet
+ * Returns an object with prompt IDs as keys and prompt text as values
+ * Only returns active prompts
+ */
+export async function getPromptsFromSheet() {
+    try {
+        const sheets = getSheetsClient();
+        const res = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Prompts!A:H'
+        });
+        
+        const [header = [], ...rows] = res.data.values || [];
+        
+        // Find column indexes
+        const idIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'id');
+        const promptIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'prompt');
+        const activeIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'active');
+        const typeIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'type');
+        
+        if (idIdx === -1 || promptIdx === -1) {
+            throw new Error('Prompts sheet is missing required columns (ID, Prompt)');
+        }
+        
+        const prompts = {};
+        const rules = {};
+        
+        // Mapping from sheet IDs to rules object keys
+        const charLimitMapping = {
+            'char_limit_new_name_min': 'newNameCharMin',
+            'char_limit_new_name_max': 'newNameCharMax',
+            'char_limit_title_min': 'titleCharMin',
+            'char_limit_title_max': 'titleCharMax',
+            'char_limit_h1_min': 'h1CharMin',
+            'char_limit_h1_max': 'h1CharMax',
+            'char_limit_meta_min': 'metaCharMin',
+            'char_limit_meta_max': 'metaCharMax',
+            'char_limit_short_min': 'shortCharMin',
+            'char_limit_short_max': 'shortCharMax',
+            'char_limit_long_min': 'longCharMin',
+            'char_limit_long_max': 'longCharMax',
+            'char_limit_highlights_min': 'highlightsMin',
+            'char_limit_highlights_max': 'highlightsMax',
+            'char_limit_highlight_line2_max': 'highlightLine2Max',
+            'char_limit_photo_alt_max': 'photoAltMax',
+            'char_limit_photo_caption_max': 'photoCaptionMax',
+        };
+        
+        for (const row of rows) {
+            const id = row[idIdx];
+            const prompt = row[promptIdx];
+            const active = activeIdx !== -1 ? row[activeIdx] : 'TRUE';
+            const type = typeIdx !== -1 ? row[typeIdx] : '';
+            
+            // Skip inactive rows
+            if (!active || active.toString().toUpperCase() !== 'TRUE') {
+                continue;
+            }
+            
+            if (!id || !prompt) {
+                continue;
+            }
+            
+            // Check if this is a character limit row
+            if (type === 'char_limits' && charLimitMapping[id]) {
+                const ruleKey = charLimitMapping[id];
+                const value = parseInt(prompt, 10);
+                if (!isNaN(value)) {
+                    rules[ruleKey] = value;
+                }
+            } else {
+                // Regular prompt
+                prompts[id] = prompt;
+            }
+        }
+        
+        console.log(`Loaded ${Object.keys(prompts).length} active prompts and ${Object.keys(rules).length} character limits from Sheets`);
+        return { prompts, rules };
+    } catch (error) {
+        console.error('Error loading prompts from Sheets:', error);
+        throw new Error(`Failed to load prompts: ${error.message || String(error)}`);
+    }
+}
+
+/**
+ * Update a prompt in the Prompts sheet
+ * @param {string} promptId - The ID of the prompt to update
+ * @param {string} newPromptText - The new prompt text
+ */
+export async function updatePrompt(promptId, newPromptText) {
+    try {
+        const sheets = getSheetsClient();
+        
+        // Get current sheet data
+        const res = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Prompts!A:H'
+        });
+        
+        const [header = [], ...rows] = res.data.values || [];
+        
+        // Find column indexes
+        const idIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'id');
+        const promptIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'prompt');
+        const lastModifiedIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'last_modified');
+        
+        if (idIdx === -1 || promptIdx === -1) {
+            throw new Error('Prompts sheet is missing required columns (ID, Prompt)');
+        }
+        
+        // Find the row with matching ID
+        const rowIndex = rows.findIndex(row => row[idIdx] === promptId);
+        
+        if (rowIndex === -1) {
+            throw new Error(`Prompt with ID "${promptId}" not found`);
+        }
+        
+        // Update prompt text
+        const promptRange = `Prompts!${String.fromCharCode(65 + promptIdx)}${rowIndex + 2}`;
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: promptRange,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[newPromptText]] }
+        });
+        
+        // Update Last_Modified timestamp if column exists
+        if (lastModifiedIdx !== -1) {
+            const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const timestampRange = `Prompts!${String.fromCharCode(65 + lastModifiedIdx)}${rowIndex + 2}`;
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: timestampRange,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [[timestamp]] }
+            });
+        }
+        
+        console.log(`Updated prompt "${promptId}" successfully`);
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating prompt:', error);
+        throw new Error(`Failed to update prompt: ${error.message || String(error)}`);
+    }
+}
+
+/**
+ * Update a character limit in the Prompts sheet
+ * @param {string} limitId - The ID of the character limit to update (e.g., 'char_limit_new_name_min')
+ * @param {number} newValue - The new numeric value
+ */
+export async function updateCharLimit(limitId, newValue) {
+    try {
+        const sheets = getSheetsClient();
+        
+        // Get current sheet data
+        const res = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Prompts!A:H'
+        });
+        
+        const [header = [], ...rows] = res.data.values || [];
+        
+        // Find column indexes
+        const idIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'id');
+        const promptIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'prompt');
+        const lastModifiedIdx = header.findIndex(h => (h || '').trim().toLowerCase() === 'last_modified');
+        
+        if (idIdx === -1 || promptIdx === -1) {
+            throw new Error('Prompts sheet is missing required columns (ID, Prompt)');
+        }
+        
+        // Find the row with matching ID
+        const rowIndex = rows.findIndex(row => row[idIdx] === limitId);
+        
+        if (rowIndex === -1) {
+            throw new Error(`Character limit with ID "${limitId}" not found`);
+        }
+        
+        // Update value (stored in Prompt column)
+        const valueRange = `Prompts!${String.fromCharCode(65 + promptIdx)}${rowIndex + 2}`;
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: valueRange,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[newValue.toString()]] }
+        });
+        
+        // Update Last_Modified timestamp if column exists
+        if (lastModifiedIdx !== -1) {
+            const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const timestampRange = `Prompts!${String.fromCharCode(65 + lastModifiedIdx)}${rowIndex + 2}`;
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: timestampRange,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [[timestamp]] }
+            });
+        }
+        
+        console.log(`Updated character limit "${limitId}" to ${newValue} successfully`);
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating character limit:', error);
+        throw new Error(`Failed to update character limit: ${error.message || String(error)}`);
+    }
+}
+
+/**
+ * Initialize the Prompts sheet with data from constants
+ * This should be run once to populate the sheet
+ * @param {object} constantsData - Object with all prompts from constants.ts
+ */
+export async function initializePromptsSheet(constantsData) {
+    try {
+        const sheets = getSheetsClient();
+        
+        // Define header
+        const header = ['ID', 'Name', 'Language', 'Type', 'Prompt', 'Version', 'Last_Modified', 'Active'];
+        
+        // Build rows from constants data
+        const rows = [header];
+        
+        // Add brandbook
+        rows.push([
+            'brandbook',
+            'Brandbook / Tone of Voice',
+            'ALL',
+            'brand_guidelines',
+            constantsData.brandBook,
+            '1.0',
+            new Date().toISOString().split('T')[0],
+            'TRUE'
+        ]);
+        
+        // Add all prompts
+        const promptMappings = [
+            { id: 'normalize_en', name: 'EN Normalize Description', lang: 'EN', type: 'tour_description', key: 'normalizeEN' },
+            { id: 'localize_pl', name: 'PL Localize Description', lang: 'PL', type: 'tour_description', key: 'localizePL' },
+            { id: 'localize_de', name: 'DE Localize Description', lang: 'DE', type: 'tour_description', key: 'localizeDE' },
+            { id: 'localize_es', name: 'ES Localize Description', lang: 'ES', type: 'tour_description', key: 'localizeES' },
+            { id: 'qc_en', name: 'EN Quality Check', lang: 'EN', type: 'quality_check', key: 'qcEN' },
+            { id: 'qc_pl', name: 'PL Quality Check', lang: 'PL', type: 'quality_check', key: 'qcPL' },
+            { id: 'qc_de', name: 'DE Quality Check', lang: 'DE', type: 'quality_check', key: 'qcDE' },
+            { id: 'qc_es', name: 'ES Quality Check', lang: 'ES', type: 'quality_check', key: 'qcES' },
+            { id: 'seo_name_title_h1_en', name: 'EN SEO Fields (Name/Title/H1)', lang: 'EN', type: 'seo_generation', key: 'newNameTitleH1EN' },
+            { id: 'seo_name_title_h1_pl', name: 'PL SEO Fields (Name/Title/H1)', lang: 'PL', type: 'seo_generation', key: 'newNameTitleH1PL' },
+            { id: 'seo_name_title_h1_de', name: 'DE SEO Fields (Name/Title/H1)', lang: 'DE', type: 'seo_generation', key: 'newNameTitleH1DE' },
+            { id: 'seo_name_title_h1_es', name: 'ES SEO Fields (Name/Title/H1)', lang: 'ES', type: 'seo_generation', key: 'newNameTitleH1ES' },
+            { id: 'meta_en', name: 'EN Meta Description', lang: 'EN', type: 'seo_generation', key: 'metaEN' },
+            { id: 'meta_pl', name: 'PL Meta Description', lang: 'PL', type: 'seo_generation', key: 'metaPL' },
+            { id: 'meta_de', name: 'DE Meta Description', lang: 'DE', type: 'seo_generation', key: 'metaDE' },
+            { id: 'meta_es', name: 'ES Meta Description', lang: 'ES', type: 'seo_generation', key: 'metaES' },
+            { id: 'photo_base', name: 'Photo Analysis & Metadata', lang: 'ALL', type: 'photo_analysis', key: 'photoBase' },
+            { id: 'photo_translate', name: 'Photo Metadata Translation', lang: 'ALL', type: 'photo_translation', key: 'photoTranslate' }
+        ];
+        
+        for (const mapping of promptMappings) {
+            const promptText = constantsData.prompts[mapping.key];
+            if (promptText) {
+                rows.push([
+                    mapping.id,
+                    mapping.name,
+                    mapping.lang,
+                    mapping.type,
+                    promptText,
+                    '1.0',
+                    new Date().toISOString().split('T')[0],
+                    'TRUE'
+                ]);
+            }
+        }
+        
+        // Add character limits
+        const charLimitMappings = [
+            { id: 'char_limit_new_name_min', name: 'New Name Min Characters', key: 'newNameCharMin' },
+            { id: 'char_limit_new_name_max', name: 'New Name Max Characters', key: 'newNameCharMax' },
+            { id: 'char_limit_title_min', name: 'Title Min Characters', key: 'titleCharMin' },
+            { id: 'char_limit_title_max', name: 'Title Max Characters', key: 'titleCharMax' },
+            { id: 'char_limit_h1_min', name: 'H1 Min Characters', key: 'h1CharMin' },
+            { id: 'char_limit_h1_max', name: 'H1 Max Characters', key: 'h1CharMax' },
+            { id: 'char_limit_meta_min', name: 'Meta Description Min Characters', key: 'metaCharMin' },
+            { id: 'char_limit_meta_max', name: 'Meta Description Max Characters', key: 'metaCharMax' },
+            { id: 'char_limit_short_min', name: 'Short Description Min Characters', key: 'shortCharMin' },
+            { id: 'char_limit_short_max', name: 'Short Description Max Characters', key: 'shortCharMax' },
+            { id: 'char_limit_long_min', name: 'Long Description Min Characters', key: 'longCharMin' },
+            { id: 'char_limit_long_max', name: 'Long Description Max Characters', key: 'longCharMax' },
+            { id: 'char_limit_highlights_min', name: 'Highlights Min Items', key: 'highlightsMin' },
+            { id: 'char_limit_highlights_max', name: 'Highlights Max Items', key: 'highlightsMax' },
+            { id: 'char_limit_highlight_line2_max', name: 'Highlight Line 2 Max Characters', key: 'highlightLine2Max' },
+            { id: 'char_limit_photo_alt_max', name: 'Photo Alt Max Characters', key: 'photoAltMax' },
+            { id: 'char_limit_photo_caption_max', name: 'Photo Caption Max Characters', key: 'photoCaptionMax' },
+        ];
+        
+        for (const mapping of charLimitMappings) {
+            const value = constantsData.rules[mapping.key];
+            if (value !== undefined) {
+                rows.push([
+                    mapping.id,
+                    mapping.name,
+                    'ALL',
+                    'char_limits',
+                    value.toString(),
+                    '1.0',
+                    new Date().toISOString().split('T')[0],
+                    'TRUE'
+                ]);
+            }
+        }
+        
+        // Write all data to sheet
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Prompts!A1',
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: rows }
+        });
+        
+        console.log(`Initialized Prompts sheet with ${rows.length - 1} items (prompts and character limits)`);
+        return { success: true, count: rows.length - 1 };
+    } catch (error) {
+        console.error('Error initializing Prompts sheet:', error);
+        throw new Error(`Failed to initialize Prompts sheet: ${error.message || String(error)}`);
     }
 }

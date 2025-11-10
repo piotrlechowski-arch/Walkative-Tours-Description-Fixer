@@ -4,11 +4,38 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
-import { getTours, getTourDetails, getCanonicalEnData, getLocalizedData, acceptChanges, createTour, uploadPhotoToDrive, addPhotoToSource, generatePhotoId, addPhotoIdToTour } from './googleApiService.js';
+import { getTours, getTourDetails, getCanonicalEnData, getLocalizedData, acceptChanges, createTour, uploadPhotoToDrive, addPhotoToSource, generatePhotoId, addPhotoIdToTour, getPromptsFromSheet, updatePrompt, updateCharLimit, initializePromptsSheet } from './googleApiService.js';
 import { google } from 'googleapis';
 import { JWT, OAuth2Client } from 'google-auth-library';
 import multer from 'multer';
 import sharp from 'sharp';
+import convert from 'heic-convert';
+
+/**
+ * Convert HEIC/HEIF to JPEG using heic-convert npm library (WebAssembly-based)
+ * This is more reliable than CLI tools and doesn't require system dependencies
+ * @param {Buffer} heicBuffer - HEIC file buffer
+ * @returns {Promise<Buffer>} - JPEG file buffer
+ */
+async function convertHeicToJpeg(heicBuffer) {
+    try {
+        console.log(`Converting HEIC to JPEG using heic-convert library (input size: ${heicBuffer.length} bytes)`);
+        
+        // Convert HEIC to JPEG using WebAssembly-based library
+        // format: 'JPEG', quality: 0.9 (90%)
+        const jpegBuffer = await convert({
+            buffer: heicBuffer,
+            format: 'JPEG',
+            quality: 0.9
+        });
+        
+        console.log(`HEIC converted to JPEG successfully, size: ${jpegBuffer.length} bytes`);
+        return Buffer.from(jpegBuffer);
+    } catch (error) {
+        console.error(`HEIC conversion error:`, error);
+        throw new Error(`Failed to convert HEIC to JPEG: ${error.message}`);
+    }
+}
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -386,6 +413,57 @@ app.post('/api/tours/:name/accept', async (req, res) => {
     }
 });
 
+// Endpoint to convert HEIC/HEIF images to base64 JPEG for analysis
+app.post('/api/convert-image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        console.log(`Converting image: ${req.file.originalname}, format: ${req.file.mimetype}, size: ${req.file.buffer.length} bytes`);
+
+        // Convert any image format (including HEIC) to JPEG using Sharp
+        let image = sharp(req.file.buffer);
+        
+        // Get image metadata
+        const metadata = await image.metadata();
+        console.log(`Image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}`);
+        
+        // Resize if image is too large (max width 1920px to reduce token usage)
+        if (metadata.width && metadata.width > 1920) {
+            image = image.resize(1920, null, {
+                withoutEnlargement: true,
+                fit: 'inside'
+            });
+            console.log(`Resizing image from ${metadata.width}px to max 1920px width`);
+        }
+        
+        // Convert to JPEG with good quality for analysis
+        const jpegBuffer = await image
+            .jpeg({ 
+                quality: 85,
+                mozjpeg: true
+            })
+            .toBuffer();
+        
+        // Convert to base64
+        const base64Data = jpegBuffer.toString('base64');
+        
+        console.log(`Successfully converted image to JPEG base64, final size: ${jpegBuffer.length} bytes`);
+        
+        res.json({ 
+            data: base64Data, 
+            mimeType: 'image/jpeg',
+            originalFormat: metadata.format,
+            originalSize: req.file.buffer.length,
+            convertedSize: jpegBuffer.length
+        });
+    } catch (error) {
+        console.error('Error converting image:', error);
+        res.status(500).json({ error: `Failed to convert image: ${error.message || String(error)}` });
+    }
+});
+
 // Photo upload endpoint
 app.post('/api/upload-photo', upload.single('photo'), async (req, res) => {
     try {
@@ -398,13 +476,31 @@ app.post('/api/upload-photo', upload.single('photo'), async (req, res) => {
             return res.status(400).json({ error: 'City is required' });
         }
 
+        // TWO-STAGE CONVERSION for HEIC files:
+        // 1. HEIC -> JPEG using heif-convert (handles modern iPhone HEIC better)
+        // 2. JPEG -> WebP using Sharp (this already works well)
+        let processBuffer = req.file.buffer;
+        const originalMimetype = req.file.mimetype.toLowerCase();
+        const isHeic = originalMimetype.includes('heic') || originalMimetype.includes('heif') || 
+                       req.file.originalname.toLowerCase().match(/\.(heic|heif)$/);
+        
+        if (isHeic) {
+            console.log(`Detected HEIC file, using two-stage conversion (HEIC -> JPEG -> WebP)`);
+            try {
+                processBuffer = await convertHeicToJpeg(req.file.buffer);
+            } catch (heicError) {
+                console.error(`HEIC conversion failed: ${heicError.message}`);
+                return res.status(400).json({ error: `Failed to process HEIC file: ${heicError.message}` });
+            }
+        }
+
         // Convert image to WebP with aggressive compression
-        // Sharp supports HEIC, JPEG, PNG, WebP, and many other formats
-        let image = sharp(req.file.buffer);
+        // Now using JPEG buffer if it was HEIC, or original buffer for other formats
+        let image = sharp(processBuffer);
         
         // Get image metadata to check format and size
         const metadata = await image.metadata();
-        console.log(`Uploaded image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}, original size: ${req.file.buffer.length} bytes`);
+        console.log(`Uploaded image format: ${metadata.format}, size: ${metadata.width}x${metadata.height}, original size: ${processBuffer.length} bytes`);
         
         // Resize if image is too large (max width 1920px, maintain aspect ratio)
         if (metadata.width && metadata.width > 1920) {
@@ -438,7 +534,7 @@ app.post('/api/upload-photo', upload.single('photo'), async (req, res) => {
             attempts++;
             console.log(`File too large (${webpBuffer.length} bytes), reducing quality to ${quality}`);
             
-            image = sharp(req.file.buffer);
+            image = sharp(processBuffer);
             if (metadata.width && metadata.width > 1920) {
                 image = image.resize(1920, null, {
                     withoutEnlargement: true,
@@ -670,6 +766,79 @@ Zasady:
     } catch (error) {
         console.error('Error analyzing and adding photo to tour:', error);
         res.status(500).json({ error: `Failed to analyze and add photo: ${error.message || String(error)}` });
+    }
+});
+
+// ============================================================================
+// PROMPTS API
+// ============================================================================
+
+// Get all prompts
+app.get('/api/prompts', async (req, res) => {
+    try {
+        const prompts = await getPromptsFromSheet();
+        res.json(prompts);
+    } catch (error) {
+        console.error('Error fetching prompts:', error);
+        res.status(500).json({ error: `Failed to fetch prompts: ${error.message || String(error)}` });
+    }
+});
+
+// Update a prompt
+app.put('/api/prompts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { prompt } = req.body;
+        
+        if (!prompt) {
+            return res.status(400).json({ error: 'Prompt text is required' });
+        }
+        
+        const result = await updatePrompt(id, prompt);
+        res.json(result);
+    } catch (error) {
+        console.error('Error updating prompt:', error);
+        res.status(500).json({ error: `Failed to update prompt: ${error.message || String(error)}` });
+    }
+});
+
+// Update a character limit
+app.put('/api/prompts/char-limits/:limitId', async (req, res) => {
+    try {
+        const { limitId } = req.params;
+        const { value } = req.body;
+        
+        if (value === undefined || value === null) {
+            return res.status(400).json({ error: 'Value is required' });
+        }
+        
+        const numericValue = parseInt(value, 10);
+        if (isNaN(numericValue)) {
+            return res.status(400).json({ error: 'Value must be a valid number' });
+        }
+        
+        const result = await updateCharLimit(limitId, numericValue);
+        res.json(result);
+    } catch (error) {
+        console.error('Error updating character limit:', error);
+        res.status(500).json({ error: `Failed to update character limit: ${error.message || String(error)}` });
+    }
+});
+
+// Initialize prompts sheet (one-time operation)
+app.post('/api/prompts/initialize', async (req, res) => {
+    try {
+        const { constantsData } = req.body;
+        
+        if (!constantsData || !constantsData.prompts || !constantsData.brandBook) {
+            return res.status(400).json({ error: 'Constants data with prompts and brandBook is required' });
+        }
+        
+        const result = await initializePromptsSheet(constantsData);
+        res.json(result);
+    } catch (error) {
+        console.error('Error initializing prompts sheet:', error);
+        res.status(500).json({ error: `Failed to initialize prompts sheet: ${error.message || String(error)}` });
     }
 });
 

@@ -42,6 +42,65 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchTourList();
+    
+    // Load prompts and character limits from Sheets
+    const loadPrompts = async () => {
+      try {
+        const { prompts: promptsFromSheet, rules: rulesFromSheet } = await apiService.getPrompts();
+        console.log('Loaded from Sheets:', Object.keys(promptsFromSheet).length, 'prompts and', Object.keys(rulesFromSheet || {}).length, 'character limits');
+        
+        // Map sheet prompt IDs to settings keys
+        const mappedPrompts: Record<string, string> = {};
+        const mapping: Record<string, string> = {
+          'normalize_en': 'normalizeEN',
+          'localize_pl': 'localizePL',
+          'localize_de': 'localizeDE',
+          'localize_es': 'localizeES',
+          'qc_en': 'qcEN',
+          'qc_pl': 'qcPL',
+          'qc_de': 'qcDE',
+          'qc_es': 'qcES',
+          'seo_name_title_h1_en': 'newNameTitleH1EN',
+          'seo_name_title_h1_pl': 'newNameTitleH1PL',
+          'seo_name_title_h1_de': 'newNameTitleH1DE',
+          'seo_name_title_h1_es': 'newNameTitleH1ES',
+          'meta_en': 'metaEN',
+          'meta_pl': 'metaPL',
+          'meta_de': 'metaDE',
+          'meta_es': 'metaES',
+          'photo_base': 'photoBase',
+          'photo_translate': 'photoTranslate',
+        };
+        
+        // Map prompts from sheet format to settings format
+        for (const [sheetKey, settingsKey] of Object.entries(mapping)) {
+          if (promptsFromSheet[sheetKey]) {
+            mappedPrompts[settingsKey] = promptsFromSheet[sheetKey];
+          }
+        }
+        
+        // Update settings with prompts and character limits from Sheets
+        setSettings(prev => ({
+          ...prev,
+          brandBook: promptsFromSheet['brandbook'] || prev.brandBook,
+          rules: {
+            ...prev.rules,
+            ...(rulesFromSheet || {}),
+          },
+          prompts: {
+            ...prev.prompts,
+            ...mappedPrompts,
+          }
+        }));
+        
+        console.log('Settings updated with prompts and character limits from Sheets');
+      } catch (err) {
+        console.error('Failed to load prompts from Sheets, using defaults:', err);
+        // Continue with default prompts from constants
+      }
+    };
+    
+    loadPrompts();
   }, []); // Removed fetchTourList from dependency array to avoid re-fetching on tour selection change
 
   useEffect(() => {

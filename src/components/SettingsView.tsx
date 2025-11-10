@@ -67,6 +67,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [driveAuthStatus, setDriveAuthStatus] = useState<{ authorized: boolean; message: string } | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     // Check Google Drive authorization status on mount
@@ -106,9 +107,89 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
     }));
   };
 
-  const handleSave = () => {
-    setSettings(localSettings);
-    alert('Ustawienia zostały zapisane.');
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Mapping from settings keys to sheet IDs
+      const promptMapping: Record<keyof AppSettings['prompts'], string> = {
+        normalizeEN: 'normalize_en',
+        localizePL: 'localize_pl',
+        localizeDE: 'localize_de',
+        localizeES: 'localize_es',
+        qcEN: 'qc_en',
+        qcPL: 'qc_pl',
+        qcDE: 'qc_de',
+        qcES: 'qc_es',
+        newNameTitleH1EN: 'seo_name_title_h1_en',
+        newNameTitleH1PL: 'seo_name_title_h1_pl',
+        newNameTitleH1DE: 'seo_name_title_h1_de',
+        newNameTitleH1ES: 'seo_name_title_h1_es',
+        metaEN: 'meta_en',
+        metaPL: 'meta_pl',
+        metaDE: 'meta_de',
+        metaES: 'meta_es',
+        photoBase: 'photo_base',
+        photoTranslate: 'photo_translate',
+      };
+
+      const ruleMapping: Record<keyof ValidationRules, string> = {
+        newNameCharMin: 'char_limit_new_name_min',
+        newNameCharMax: 'char_limit_new_name_max',
+        titleCharMin: 'char_limit_title_min',
+        titleCharMax: 'char_limit_title_max',
+        h1CharMin: 'char_limit_h1_min',
+        h1CharMax: 'char_limit_h1_max',
+        metaCharMin: 'char_limit_meta_min',
+        metaCharMax: 'char_limit_meta_max',
+        shortCharMin: 'char_limit_short_min',
+        shortCharMax: 'char_limit_short_max',
+        longCharMin: 'char_limit_long_min',
+        longCharMax: 'char_limit_long_max',
+        highlightsMin: 'char_limit_highlights_min',
+        highlightsMax: 'char_limit_highlights_max',
+        highlightLine2Max: 'char_limit_highlight_line2_max',
+        photoAltMax: 'char_limit_photo_alt_max',
+        photoCaptionMax: 'char_limit_photo_caption_max',
+      };
+
+      const updatePromises: Promise<any>[] = [];
+
+      // Save brandbook if changed
+      if (localSettings.brandBook !== settings.brandBook) {
+        updatePromises.push(apiService.updatePrompt('brandbook', localSettings.brandBook));
+      }
+
+      // Save all changed prompts
+      for (const [settingsKey, sheetId] of Object.entries(promptMapping)) {
+        const key = settingsKey as keyof AppSettings['prompts'];
+        if (localSettings.prompts[key] !== settings.prompts[key]) {
+          updatePromises.push(apiService.updatePrompt(sheetId, localSettings.prompts[key]));
+        }
+      }
+
+      // Save all changed character limits
+      for (const [settingsKey, sheetId] of Object.entries(ruleMapping)) {
+        const key = settingsKey as keyof ValidationRules;
+        if (localSettings.rules[key] !== settings.rules[key]) {
+          updatePromises.push(apiService.updateCharLimit(sheetId, localSettings.rules[key]));
+        }
+      }
+
+      // Wait for all updates to complete
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+        console.log(`Successfully saved ${updatePromises.length} items to Sheets (prompts and character limits)`);
+      }
+
+      // Update local state
+      setSettings(localSettings);
+      alert(`Ustawienia zostały zapisane${updatePromises.length > 0 ? ` (${updatePromises.length} zmian zapisanych do Google Sheets)` : ''}.`);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert(`Błąd podczas zapisywania ustawień: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAuthorizeGoogleDrive = () => {
@@ -221,6 +302,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
          <TextAreaInput label="Meta Description - DE" value={localSettings.prompts.metaDE} onChange={v => handlePromptChange('metaDE', v)} />
          <TextAreaInput label="Meta Description - ES" value={localSettings.prompts.metaES} onChange={v => handlePromptChange('metaES', v)} />
          <TextAreaInput label="Analiza Zdjęć (baza)" value={localSettings.prompts.photoBase} onChange={v => handlePromptChange('photoBase', v)} />
+         <TextAreaInput label="Tłumaczenie Metadanych Zdjęć" value={localSettings.prompts.photoTranslate} onChange={v => handlePromptChange('photoTranslate', v)} />
          <TextAreaInput label="Kontrola Jakości (QC) - EN" value={localSettings.prompts.qcEN} onChange={v => handlePromptChange('qcEN', v)} />
          <TextAreaInput label="Kontrola Jakości (QC) - PL" value={localSettings.prompts.qcPL} onChange={v => handlePromptChange('qcPL', v)} />
          <TextAreaInput label="Kontrola Jakości (QC) - DE" value={localSettings.prompts.qcDE} onChange={v => handlePromptChange('qcDE', v)} />
@@ -230,9 +312,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSetting
       <div className="flex justify-end mt-6">
         <button
           onClick={handleSave}
-          className="py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          disabled={saving}
+          className="py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          Zapisz ustawienia
+          {saving ? 'Zapisywanie...' : 'Zapisz ustawienia'}
         </button>
       </div>
     </div>
